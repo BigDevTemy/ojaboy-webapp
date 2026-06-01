@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { DashboardCreateOrderModal } from "@/components/DashboardCreateOrderModal";
 import { DashboardPriceTrendsPanel } from "@/components/DashboardPriceTrendsChart";
 import {
   ArrowDownRight,
@@ -325,9 +326,12 @@ export default function DashboardPage() {
                 <h1 className="text-3xl font-black tracking-normal text-black">Good morning, Temiloluwa!</h1>
                 <p className="mt-2 text-sm font-medium text-black/58">Here&apos;s what&apos;s happening in the market today.</p>
               </div>
-              <div className="flex items-center gap-2 text-sm font-bold text-black/62">
-                <CalendarDays size={18} />
-                May 24, 2025
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 text-sm font-bold text-black/62">
+                  <CalendarDays size={18} />
+                  May 24, 2025
+                </div>
+                <DashboardCreateOrderModal />
               </div>
             </div>
 

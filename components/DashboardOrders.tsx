@@ -1,4 +1,5 @@
 import Image from "next/image";
+import { DashboardCreateOrderModal } from "@/components/DashboardCreateOrderModal";
 import {
   CalendarDays,
   CheckCircle2,
@@ -112,9 +113,12 @@ export function DashboardOrders() {
           <h1 className="text-3xl font-black tracking-normal text-black">Orders</h1>
           <p className="mt-2 text-sm font-medium text-black/58">Track current orders, review history, and manage feedback.</p>
         </div>
-        <div className="flex items-center gap-2 text-sm font-bold text-black/62">
-          <CalendarDays size={18} />
-          May 24, 2025
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-sm font-bold text-black/62">
+            <CalendarDays size={18} />
+            May 24, 2025
+          </div>
+          <DashboardCreateOrderModal />
         </div>
       </div>
 
