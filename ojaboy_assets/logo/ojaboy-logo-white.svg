@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 140">
+<style>.t{font:900 72px Arial,sans-serif;fill:#ffffff}</style>
+<g fill="#ffffff">
+<path d="M60 40 L78 12 L96 40" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<rect x="38" y="46" width="80" height="8" rx="4"/>
+<rect x="28" y="62" width="100" height="8" rx="4"/>
+<circle cx="52" cy="82" r="7"/>
+<circle cx="104" cy="82" r="7"/>
+<path d="M42 74 H114 L104 102 H52 Z"/>
+</g>
+<text x="135" y="102" class="t">OJABOY</text>
+</svg>

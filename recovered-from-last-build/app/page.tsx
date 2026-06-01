@@ -47,9 +47,9 @@ const tickerItems = [
 
 const productPrices = [
   { name: "Rice", unit: "50kg", price: "N85,000", change: "2%", direction: "down", initials: "RI", tone: "from-[#fff8ef] to-[#ffffff]", accent: "#d9a65a", imageSrc: "/products/rice.jpeg" },
-  { name: "Tomatoes", unit: "Basket", price: "N24,000", change: "8%", direction: "up", initials: "TO", tone: "from-[#fff1f1] to-[#ffffff]", accent: "#f10606", imageSrc: "/products/tomatoes-basket.png" },
+  { name: "Tomatoes", unit: "Basket", price: "N24,000", change: "8%", direction: "up", initials: "TO", tone: "from-[#fff1f1] to-[#ffffff]", accent: "#f10606", imageSrc: "/products/tomatoes.jpeg" },
   { name: "Pepper", unit: "Basket", price: "N18,000", change: "15%", direction: "up", initials: "PE", tone: "from-[#fff0ed] to-[#ffffff]", accent: "#e21c13", imageSrc: "/products/pepper.png" },
-  { name: "Beans", unit: "Oloyin", price: "N76,000", change: "3%", direction: "up", initials: "BE", tone: "from-[#fff6ef] to-[#ffffff]", accent: "#9b4b28", imageSrc: "/products/beans-sack.png" },
+  { name: "Beans", unit: "Oloyin", price: "N76,000", change: "3%", direction: "up", initials: "BE", tone: "from-[#fff6ef] to-[#ffffff]", accent: "#9b4b28", imageSrc: "/products/beans.png" },
   { name: "Palm Oil", unit: "25L", price: "N58,000", change: "1%", direction: "down", initials: "PO", tone: "from-[#fff4e6] to-[#ffffff]", accent: "#f28a16", imageSrc: "/products/palm-oil.png" },
   { name: "Garri", unit: "50kg", price: "N40,000", change: "2%", direction: "down", initials: "GA", tone: "from-[#fff9ee] to-[#ffffff]", accent: "#d7aa61", imageSrc: "/products/garri.png" },
 ];
@@ -89,7 +89,7 @@ const appBenefits = ["Market intelligence in your pocket", "Track trends in real
 
 function AskOjaboYCard() {
   return (
-    <aside className="relative mx-auto w-full max-w-[400px] rounded-2xl border border-black/10 bg-white/90 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.15)] backdrop-blur lg:mx-0 lg:justify-self-end">
+    <aside className="relative mx-auto w-full max-w-[400px] rounded-2xl border border-black/10 bg-white/90 p-4 shadow-[0_24px_70px_rgba(0,0,0,0.15)] backdrop-blur">
       <div className="mb-4 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-full bg-[#ffe2e2] text-sm font-black text-[#f10606]">AI</div>
@@ -141,9 +141,8 @@ function AskOjaboYCard() {
             className="h-10 min-w-0 flex-1 rounded-lg border border-black/10 bg-white px-4 text-xs outline-none placeholder:text-black/40"
             placeholder="Ask any market question..."
             aria-label="Ask any market question"
-            disabled
           />
-          <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#f10606] text-white shadow-lg shadow-red-500/20" aria-label="Send question" disabled>
+          <button className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#f10606] text-white shadow-lg shadow-red-500/20" aria-label="Send question">
             <Send size={16} />
           </button>
         </div>
@@ -154,7 +153,7 @@ function AskOjaboYCard() {
 
 function HeroSection() {
   return (
-    <section className="relative overflow-hidden bg-[#fbfaf8] pb-10 pt-24 lg:min-h-[680px] lg:pb-12">
+    <section className="relative overflow-hidden bg-[#fbfaf8] pt-24 lg:h-[calc(100vh-52px)] lg:min-h-[560px]">
       <Image
         src="/hero/market-bg.png"
         alt="Nigerian market with fresh tomatoes and peppers"
@@ -166,7 +165,7 @@ function HeroSection() {
       <div className="absolute inset-0 bg-[linear-gradient(90deg,#ffffff_0%,rgba(255,255,255,0.94)_26%,rgba(255,255,255,0.66)_55%,rgba(255,255,255,0.16)_100%)]" />
       <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.86)_0%,rgba(255,255,255,0.34)_46%,rgba(255,255,255,0.05)_100%)]" />
 
-      <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-10 px-5 pb-7 pt-8 sm:px-8 lg:grid-cols-[1fr_0.92fr] lg:px-10 lg:pb-6 lg:pt-4">
+      <div className="relative z-10 mx-auto grid max-w-7xl items-center gap-10 px-5 pb-7 pt-8 sm:px-8 lg:h-full lg:grid-cols-[1fr_0.92fr] lg:px-10 lg:pb-6 lg:pt-4">
         <div className="max-w-2xl">
           <div className="mb-5 inline-flex items-center gap-2 rounded-full bg-[#dff8e7] px-4 py-2 text-sm font-bold text-[#078b39]">
             <span className="flex gap-1">
@@ -208,7 +207,7 @@ function HeroSection() {
             </div>
           </div>
         </div>
-             
+
         <AskOjaboYCard />
       </div>
     </section>

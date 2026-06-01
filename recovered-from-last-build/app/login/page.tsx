@@ -1,0 +1,24 @@
+import Link from "next/link";
+import PageShell from "@/components/PageShell";
+
+export default function LoginPage() {
+  return (
+    <PageShell>
+      <section className="px-5 py-12 sm:px-8 lg:px-10">
+        <div className="mx-auto max-w-md rounded-2xl border border-black/10 bg-white p-8 shadow-[0_22px_60px_rgba(0,0,0,0.08)]">
+          <p className="mb-3 text-sm font-black uppercase text-[#f10606]">Welcome back</p>
+          <h1 className="text-3xl font-black tracking-normal text-black">Log in to Ojaboy</h1>
+          <form className="mt-7 space-y-4">
+            <input className="h-12 w-full rounded-lg border border-black/10 px-4 text-sm outline-none" placeholder="Email or phone" />
+            <input className="h-12 w-full rounded-lg border border-black/10 px-4 text-sm outline-none" placeholder="Password" type="password" />
+            <button className="h-12 w-full rounded-lg bg-[#f10606] text-sm font-black text-white" type="button">Log In</button>
+          </form>
+          <div className="mt-5 flex items-center justify-between text-sm font-medium">
+            <a className="text-black/55 hover:text-[#f10606]" href="#">Forgot password?</a>
+            <Link className="font-black text-[#f10606]" href="/signup">Create account</Link>
+          </div>
+        </div>
+      </section>
+    </PageShell>
+  );
+}
