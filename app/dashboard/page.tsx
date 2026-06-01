@@ -1,41 +1,14 @@
 import Image from "next/image";
-import Link from "next/link";
+import { DashboardPriceTrendsPanel } from "@/components/DashboardPriceTrendsChart";
 import {
   ArrowDownRight,
   ArrowUpRight,
   Award,
-  Bell,
-  Bot,
   CalendarDays,
-  ChevronDown,
   ChevronRight,
-  Crown,
-  FileText,
   HeartPulse,
-  LayoutDashboard,
-  LineChart,
-  Menu,
-  MessageSquare,
-  Search,
-  Settings,
-  ShoppingCart,
-  Sparkles,
-  Star,
-  Store,
+  Send,
 } from "lucide-react";
-
-const navItems = [
-  { label: "Dashboard", icon: LayoutDashboard, active: true },
-  { label: "Market Prices", icon: LineChart },
-  { label: "Markets", icon: Store },
-  { label: "Watchlist", icon: Star },
-  { label: "Price Alerts", icon: Bell },
-  { label: "AI Assistant", icon: Bot },
-  { label: "Reports & Insights", icon: FileText },
-  { label: "Orders", icon: ShoppingCart, badge: "3" },
-  { label: "Messages", icon: MessageSquare },
-  { label: "Settings", icon: Settings },
-];
 
 const summaryCards = [
   {
@@ -100,6 +73,69 @@ const summaryCards = [
   },
 ];
 
+const aiPrompts = [
+  "Rice price in Lagos?",
+  "Cheapest beans market?",
+  "Buy tomatoes now or wait?",
+  "Fast moving products?",
+];
+
+const watchlistItems = [
+  {
+    name: "Rice (50kg)",
+    price: "N84,500",
+    change: "-2%",
+    direction: "down",
+    image: "/products/rice.png",
+  },
+  {
+    name: "Tomatoes (Basket)",
+    price: "N18,500",
+    change: "-8%",
+    direction: "down",
+    image: "/products/tomatoes-basket.png",
+  },
+  {
+    name: "Palm Oil (25L)",
+    price: "N42,000",
+    change: "-1%",
+    direction: "down",
+    image: "/products/palm-oil.png",
+  },
+  {
+    name: "Pepper (Basket)",
+    price: "N23,000",
+    change: "+15%",
+    direction: "up",
+    image: "/products/pepper.png",
+  },
+];
+
+const marketComparisonItems = [
+  { market: "Mile 12 Market", price: "N84,500", change: "Best Price", best: true },
+  { market: "Daleko Market", price: "N85,000", change: "+0.6%" },
+  { market: "Oyingbo Market", price: "N86,000", change: "+1.8%" },
+  { market: "Agege Market", price: "N86,500", change: "+2.4%" },
+];
+
+const marketNewsItems = [
+  {
+    title: "Tomato supply increases in Lagos markets",
+    time: "2 hours ago",
+    image: "/products/tomatoes-basket.png",
+  },
+  {
+    title: "Heavy rains affecting pepper prices",
+    time: "Yesterday",
+    image: "/products/pepper.png",
+  },
+  {
+    title: "Onion scarcity expected next week",
+    time: "2 days ago",
+    image: "/products/beans-sack.png",
+  },
+];
+
 function SummaryCard({ card }: { card: (typeof summaryCards)[number] }) {
   return (
     <article className="flex min-h-36 flex-col overflow-hidden rounded-xl border border-black/10 bg-white shadow-[0_14px_35px_rgba(0,0,0,0.04)]">
@@ -126,104 +162,164 @@ function SummaryCard({ card }: { card: (typeof summaryCards)[number] }) {
   );
 }
 
-function Sidebar() {
+function MarketComparisonPanel() {
   return (
-    <aside className="hidden h-screen w-[270px] shrink-0 border-r border-black/10 bg-white px-6 py-7 lg:sticky lg:top-0 lg:flex lg:flex-col">
-      <Link className="relative block h-12 w-[170px]" href="/" aria-label="Ojaboy home">
-        <Image src="/logo/ojaboy-logo.svg" alt="Ojaboy" fill priority className="object-contain object-left" sizes="170px" />
-      </Link>
-
-      <nav className="mt-9 flex-1 space-y-2">
-        {navItems.map((item) => (
-          <button
-            className={`flex h-12 w-full items-center gap-4 rounded-lg px-3 text-left text-sm font-black transition ${
-              item.active ? "bg-[#fff0f0] text-[#f10606]" : "text-black/82 hover:bg-black/[0.03] hover:text-[#f10606]"
-            }`}
-            key={item.label}
-            type="button"
-          >
-            <item.icon size={20} strokeWidth={2.2} />
-            <span className="min-w-0 flex-1 truncate">{item.label}</span>
-            {item.badge ? (
-              <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-[#f10606] px-2 text-xs font-black text-white">
-                {item.badge}
-              </span>
-            ) : null}
-          </button>
-        ))}
-      </nav>
-
-      <div className="rounded-xl border border-[#ffcaca] bg-[#fff7f7] p-5">
-        <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#f10606] shadow-sm">
-          <Crown size={20} />
+    <section className="rounded-xl border border-black/10 bg-white p-4 shadow-[0_14px_35px_rgba(0,0,0,0.04)]">
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-black text-black">Market Comparison</h2>
+          <p className="mt-1 text-xs font-black text-black/82">Rice (50kg)</p>
         </div>
-        <h2 className="text-lg font-black text-black">Go Premium</h2>
-        <p className="mt-2 text-xs font-medium leading-5 text-black/62">
-          Unlock advanced insights, price predictions and smarter reports.
-        </p>
-        <button className="mt-5 h-11 w-full rounded-lg bg-[#f10606] text-sm font-black text-white shadow-[0_14px_28px_rgba(241,6,6,0.22)]" type="button">
-          Upgrade Now
-        </button>
+        <span className="rounded-full bg-[#dff8e7] px-3 py-1 text-[10px] font-black text-[#078b39]">Best Price</span>
       </div>
 
-      <button className="mt-4 flex h-16 items-center gap-3 rounded-xl border border-black/10 bg-white px-3 text-left shadow-sm" type="button">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#ffe5e5] text-sm font-black text-[#f10606]">T</span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-sm font-black text-black">Temiloluwa</span>
-          <span className="block text-xs font-medium text-black/55">Free Plan</span>
-        </span>
-        <ChevronDown size={16} />
+      <div className="space-y-1">
+        {marketComparisonItems.map((item) => (
+          <div
+            className={`grid grid-cols-[1fr_auto_auto] items-center gap-3 rounded-lg px-3 py-2 text-xs ${
+              item.best ? "bg-[#eaf8ef]" : ""
+            }`}
+            key={item.market}
+          >
+            <p className="min-w-0 truncate font-bold text-black">{item.market}</p>
+            <p className="font-black text-black">{item.price}</p>
+            <p className={`w-12 text-right font-black ${item.best ? "text-[#078b39]" : "text-[#f10606]"}`}>
+              {item.best ? "" : item.change}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <button className="mt-3 flex items-center gap-2 text-xs font-bold text-black transition hover:text-[#f10606]" type="button">
+        View more markets
+        <ChevronRight size={16} />
       </button>
-    </aside>
+    </section>
   );
 }
 
-function Topbar() {
+function MarketNewsPanel() {
   return (
-    <header className="sticky top-0 z-30 border-b border-black/10 bg-white/92 backdrop-blur-xl">
-      <div className="flex h-20 items-center gap-4 px-5 sm:px-8 lg:px-10">
-        <button className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-black/10 bg-white lg:hidden" type="button" aria-label="Open dashboard menu">
-          <Menu size={22} />
+    <section className="rounded-xl border border-black/10 bg-white p-5 shadow-[0_14px_35px_rgba(0,0,0,0.04)]">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <h2 className="text-base font-black text-black">Market News</h2>
+        <button className="text-xs font-black text-[#f10606] transition hover:text-black" type="button">
+          View all
         </button>
+      </div>
 
-        <div className="relative max-w-3xl flex-1">
-          <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#f10606]" size={18} />
-          <input
-            className="h-12 w-full rounded-xl border border-black/10 bg-white pl-12 pr-16 text-sm font-medium text-black outline-none shadow-[0_10px_30px_rgba(0,0,0,0.05)] placeholder:text-black/42"
-            placeholder="Ask Ojaboy anything about the market..."
-          />
-          <button className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg bg-[#f10606] text-white shadow-[0_12px_24px_rgba(241,6,6,0.26)]" type="button" aria-label="Send market question">
-            <Sparkles size={17} />
-          </button>
+      <div className="space-y-4">
+        {marketNewsItems.map((item) => (
+          <article className="flex items-center gap-3" key={item.title}>
+            <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-[#fff0f0]">
+              <Image src={item.image} alt="" fill className="object-cover" sizes="44px" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="line-clamp-2 text-sm font-black leading-5 text-black">{item.title}</h3>
+              <p className="mt-1 text-xs font-medium text-black/50">{item.time}</p>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function AskAiPanel() {
+  return (
+    <section className="relative isolate min-h-56 overflow-hidden rounded-xl border border-[#ffd6d6] bg-[#fff4f4] p-5 shadow-[0_14px_35px_rgba(241,6,6,0.05)]">
+      <div className="absolute inset-y-0 right-0 -z-10 w-1/2 bg-[radial-gradient(circle_at_55%_45%,rgba(241,6,6,0.16),transparent_34%),linear-gradient(90deg,rgba(255,244,244,0),rgba(255,255,255,0.62))]" />
+
+      <div className="grid gap-5 md:grid-cols-[1fr_290px] md:items-center">
+        <div className="min-w-0">
+          <div className="mb-2 flex items-center gap-2">
+            <h2 className="text-base font-black text-black">Ask Ojaboy AI</h2>
+            <span className="rounded-full bg-white px-2 py-1 text-xs font-black text-[#f10606] shadow-sm">AI</span>
+          </div>
+          <p className="text-xs font-medium text-black/62">Get real-time answers about prices, trends and markets.</p>
+
+          <div className="mt-4 flex flex-wrap gap-3">
+            {aiPrompts.map((prompt) => (
+              <button
+                className="text-xss inline-flex h-9 min-w-max items-center whitespace-nowrap rounded-lg border border-black/10 bg-white px-3 text-left font-bold text-black/76 shadow-sm transition hover:border-[#f10606]/30 hover:text-[#f10606]"
+                key={prompt}
+                type="button"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <div className="ml-auto hidden items-center gap-5 md:flex">
-          <button className="relative text-black/72 hover:text-[#f10606]" type="button" aria-label="Notifications">
-            <Bell size={22} />
-            <span className="absolute -right-1 -top-2 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#f10606] px-1 text-[10px] font-black text-white">2</span>
-          </button>
-          <button className="text-black/72 hover:text-[#f10606]" type="button" aria-label="Messages">
-            <MessageSquare size={22} />
-          </button>
-          <button className="flex items-center gap-3" type="button">
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#ffe5e5] text-sm font-black text-[#f10606]">T</span>
-            <span className="text-sm font-black text-black">Temiloluwa</span>
-            <ChevronDown size={16} />
-          </button>
+        <div className="relative hidden h-44 overflow-hidden rounded-xl md:block" aria-hidden="true">
+          <Image
+            src="/dashboard/ojaboy-ai-assistant.png"
+            alt=""
+            fill
+            className="object-cover object-[66%_50%]"
+            sizes="290px"
+          />
+          <div className="absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-[#fff4f4] to-transparent" />
         </div>
       </div>
-    </header>
+
+      <div className="relative mt-4">
+        <input
+          className="h-12 w-full rounded-lg border border-black/10 bg-white px-4 pr-14 text-xs font-medium text-black outline-none shadow-sm placeholder:text-black/38"
+          placeholder="Type your market question here..."
+        />
+        <button
+          className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg bg-[#f10606] text-white shadow-[0_12px_24px_rgba(241,6,6,0.24)]"
+          type="button"
+          aria-label="Send AI question"
+        >
+          <Send size={17} />
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function WatchlistPanel() {
+  return (
+    <section className="rounded-xl border border-black/10 bg-white p-5 shadow-[0_14px_35px_rgba(0,0,0,0.04)]">
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <h2 className="text-base font-black text-black">My Watchlist</h2>
+        <button className="text-xs font-black text-[#f10606] transition hover:text-black" type="button">
+          View all
+        </button>
+      </div>
+
+      <div className="divide-y divide-black/10">
+        {watchlistItems.map((item) => {
+          const isUp = item.direction === "up";
+
+          return (
+            <div className="flex items-center gap-3 py-3 first:pt-0 last:pb-0" key={item.name}>
+              <div className="relative h-11 w-11 shrink-0 overflow-hidden rounded-lg bg-[#fff0f0]">
+                <Image src={item.image} alt={item.name} fill className="object-cover" sizes="44px" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-black text-black">{item.name}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm font-black text-black">{item.price}</p>
+                <p className={`mt-1 flex items-center justify-end gap-1 text-xs font-black ${isUp ? "text-[#f10606]" : "text-[#0ba64b]"}`}>
+                  {item.change}
+                  {isUp ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                </p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
 export default function DashboardPage() {
   return (
-    <main className="min-h-screen bg-[#fbfbfb] text-black">
-      <div className="flex min-h-screen">
-        <Sidebar />
-        <section className="min-w-0 flex-1">
-          <Topbar />
-          <div className="px-5 py-7 sm:px-8 lg:px-10">
+    <>
             <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <h1 className="text-3xl font-black tracking-normal text-black">Good morning, Temiloluwa!</h1>
@@ -242,24 +338,21 @@ export default function DashboardPage() {
                 ))}
               </div>
 
-              <div className="grid gap-5 xl:grid-cols-[1fr_350px]">
+              <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_300px]">
                 <div className="space-y-5">
-                <div className="h-56 rounded-xl border border-[#ffd6d6] bg-[#fff4f4] shadow-[0_14px_35px_rgba(241,6,6,0.05)]" />
-                <div className="grid gap-5 lg:grid-cols-2">
-                  <div className="h-64 rounded-xl border border-black/10 bg-white shadow-[0_14px_35px_rgba(0,0,0,0.04)]" />
-                  <div className="h-64 rounded-xl border border-black/10 bg-white shadow-[0_14px_35px_rgba(0,0,0,0.04)]" />
+                <AskAiPanel />
+                <div className="grid gap-5 lg:grid-cols-[minmax(0,1.35fr)_minmax(260px,0.85fr)]">
+                  <DashboardPriceTrendsPanel />
+                  <MarketComparisonPanel />
                 </div>
               </div>
 
                 <aside className="space-y-5">
-                  <div className="h-80 rounded-xl border border-black/10 bg-white shadow-[0_14px_35px_rgba(0,0,0,0.04)]" />
-                  <div className="h-64 rounded-xl border border-black/10 bg-white shadow-[0_14px_35px_rgba(0,0,0,0.04)]" />
+                  <WatchlistPanel />
+                  <MarketNewsPanel />
                 </aside>
               </div>
             </div>
-          </div>
-        </section>
-      </div>
-    </main>
+    </>
   );
 }
