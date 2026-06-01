@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { clearAuthSession, getAuthSession, type AuthUser } from "@/lib/authSession";
 import {
   AlertTriangle,
   Bell,
@@ -52,8 +54,23 @@ export function DashboardTopbar({
   onOpenMobileSidebar,
   onToggleDesktopSidebar,
 }: DashboardTopbarProps) {
+  const router = useRouter();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  useEffect(() => {
+    setUser(getAuthSession()?.user ?? null);
+  }, []);
+
+  function handleLogout() {
+    clearAuthSession();
+    router.replace("/login");
+  }
+
+  const displayName = user?.fullName ?? "Temiloluwa";
+  const displayInitial = displayName.trim().charAt(0).toUpperCase() || "T";
+  const planLabel = user?.role ? `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)} Account` : "Free Plan";
 
   return (
     <header className="sticky top-0 z-30 border-b border-black/10 bg-white/92 backdrop-blur-xl">
@@ -151,18 +168,18 @@ export function DashboardTopbar({
                 setIsNotificationsOpen(false);
               }}
             >
-              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#ffe5e5] text-sm font-black text-[#f10606]">T</span>
-              <span className="text-sm font-black text-black">Temiloluwa</span>
+              <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#ffe5e5] text-sm font-black text-[#f10606]">{displayInitial}</span>
+              <span className="text-sm font-black text-black">{displayName}</span>
               <ChevronDown className={`transition ${isUserMenuOpen ? "rotate-180" : ""}`} size={16} />
             </button>
 
             {isUserMenuOpen ? (
               <div className="absolute right-0 top-12 w-56 overflow-hidden rounded-xl border border-black/10 bg-white shadow-[0_24px_60px_rgba(0,0,0,0.12)]">
                 <div className="border-b border-black/10 px-4 py-3">
-                  <p className="text-sm font-black text-black">Temiloluwa</p>
-                  <p className="mt-1 text-xs font-medium text-black/50">Free Plan</p>
+                  <p className="truncate text-sm font-black text-black">{displayName}</p>
+                  <p className="mt-1 truncate text-xs font-medium text-black/50">{user?.email ?? planLabel}</p>
                 </div>
-                <button className="flex h-11 w-full items-center gap-3 px-4 text-left text-sm font-black text-[#f10606] transition hover:bg-[#fff7f7]" type="button">
+                <button className="flex h-11 w-full items-center gap-3 px-4 text-left text-sm font-black text-[#f10606] transition hover:bg-[#fff7f7]" type="button" onClick={handleLogout}>
                   <LogOut size={17} />
                   Logout
                 </button>

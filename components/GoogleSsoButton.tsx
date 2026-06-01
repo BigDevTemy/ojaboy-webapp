@@ -1,6 +1,8 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { isAuthSession, saveAuthSession } from "@/lib/authSession";
 import { API_BASE_URL, GOOGLE_LOGIN_URL } from "@/Serverurls";
 
 type GoogleCredentialResponse = {
@@ -36,6 +38,7 @@ declare global {
 const googleLoginEndpoint = `${API_BASE_URL}${GOOGLE_LOGIN_URL}`;
 
 export function GoogleSsoButton() {
+  const router = useRouter();
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const buttonRef = useRef<HTMLDivElement>(null);
@@ -82,7 +85,14 @@ export function GoogleSsoButton() {
               throw new Error("Google sign-in failed.");
             }
 
-            window.location.href = "/dashboard";
+            const session = (await result.json()) as unknown;
+
+            if (!isAuthSession(session)) {
+              throw new Error("Google sign-in returned an invalid session.");
+            }
+
+            saveAuthSession(session);
+            router.replace("/dashboard");
           } catch (requestError) {
             setError(requestError instanceof Error ? requestError.message : "Google sign-in failed.");
           } finally {
@@ -105,7 +115,7 @@ export function GoogleSsoButton() {
     }
 
     return true;
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     const existingScript = document.querySelector<HTMLScriptElement>("script[data-google-identity]");

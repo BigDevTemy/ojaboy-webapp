@@ -2,7 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { clearAuthSession, getAuthSession, type AuthUser } from "@/lib/authSession";
 import {
   Bell,
   Bot,
@@ -11,6 +13,7 @@ import {
   FileText,
   LayoutDashboard,
   LineChart,
+  LogOut,
   MessageSquare,
   PanelLeftClose,
   PanelLeftOpen,
@@ -48,6 +51,21 @@ export function DashboardSidebar({
   onToggleCollapse,
 }: DashboardSidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
+  const [user, setUser] = useState<AuthUser | null>(null);
+
+  useEffect(() => {
+    setUser(getAuthSession()?.user ?? null);
+  }, []);
+
+  function handleLogout() {
+    clearAuthSession();
+    router.replace("/login");
+  }
+
+  const displayName = user?.fullName ?? "Temiloluwa";
+  const displayInitial = displayName.trim().charAt(0).toUpperCase() || "T";
+  const planLabel = user?.role ? `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)} Account` : "Free Plan";
 
   return (
     <>
@@ -136,12 +154,22 @@ export function DashboardSidebar({
       </div>
 
       <button className={`mt-4 flex h-16 items-center gap-3 rounded-xl border border-black/10 bg-white px-3 text-left shadow-sm ${isCollapsed ? "lg:justify-center lg:px-0" : ""}`} type="button">
-        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#ffe5e5] text-sm font-black text-[#f10606]">T</span>
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#ffe5e5] text-sm font-black text-[#f10606]">{displayInitial}</span>
         <span className={`min-w-0 flex-1 ${isCollapsed ? "lg:hidden" : ""}`}>
-          <span className="block truncate text-sm font-black text-black">Temiloluwa</span>
-          <span className="block text-xs font-medium text-black/55">Free Plan</span>
+          <span className="block truncate text-sm font-black text-black">{displayName}</span>
+          <span className="block text-xs font-medium text-black/55">{user?.email ?? planLabel}</span>
         </span>
         <ChevronDown className={isCollapsed ? "lg:hidden" : ""} size={16} />
+      </button>
+
+      <button
+        className={`mt-3 flex h-12 items-center justify-center gap-3 rounded-lg border border-black/10 text-sm font-black text-[#f10606] transition hover:bg-[#fff7f7] ${isCollapsed ? "lg:px-0" : "px-3"}`}
+        type="button"
+        onClick={handleLogout}
+        title={isCollapsed ? "Logout" : undefined}
+      >
+        <LogOut size={18} />
+        <span className={isCollapsed ? "lg:hidden" : ""}>Logout</span>
       </button>
     </aside>
     </>
