@@ -1,6 +1,9 @@
 import Link from "next/link";
 import PageShell from "@/components/PageShell";
-import { FcGoogle } from "react-icons/fc";
+import { GoogleSsoButton } from "@/components/GoogleSsoButton";
+import { API_BASE_URL, LOGIN_URL } from "@/Serverurls";
+
+const loginEndpoint = `${API_BASE_URL}${LOGIN_URL}`;
 
 export default function LoginPage() {
   return (
@@ -10,17 +13,14 @@ export default function LoginPage() {
           <p className="mb-3 text-sm font-black uppercase text-[#f10606]">Welcome back</p>
           <h1 className="text-3xl font-black tracking-normal text-black">Log in to Ojaboy</h1>
           <div className="mt-7 space-y-4">
-            <button className="flex h-12 w-full items-center justify-center gap-3 rounded-lg border border-black/10 bg-white text-sm font-black text-black shadow-sm transition hover:border-black/20 hover:bg-black/[0.02]" type="button">
-              <FcGoogle className="text-xl" />
-              Continue with Google
-            </button>
+            <GoogleSsoButton />
             <div className="flex items-center gap-3">
               <span className="h-px flex-1 bg-black/10" />
               <span className="text-xs font-bold uppercase text-black/40">or</span>
               <span className="h-px flex-1 bg-black/10" />
             </div>
           </div>
-          <form className="mt-4 space-y-4">
+          <form className="mt-4 space-y-4" data-endpoint={loginEndpoint}>
             <input className="h-12 w-full rounded-lg border border-black/10 px-4 text-sm outline-none" placeholder="Email or phone" />
             <input className="h-12 w-full rounded-lg border border-black/10 px-4 text-sm outline-none" placeholder="Password" type="password" />
             <button className="h-12 w-full rounded-lg bg-[#f10606] text-sm font-black text-white" type="button">Log In</button>
