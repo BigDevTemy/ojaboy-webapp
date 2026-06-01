@@ -2,74 +2,40 @@ import Link from "next/link";
 import Image from "next/image";
 import PageShell from "@/components/PageShell";
 import { FcGoogle } from "react-icons/fc";
-import {
-  Bell,
-  CheckCircle2,
-  LockKeyhole,
-  MapPin,
-  TrendingDown,
-} from "lucide-react";
-
-const benefits = [
-  "Track daily market prices before you buy",
-  "Get alerts when saved items drop",
-  "Build smart baskets from real market data",
-];
+import { LockKeyhole } from "lucide-react";
 
 export default function SignupPage() {
   return (
     <PageShell>
       <section className="px-5 py-10 sm:px-8 lg:px-10">
         <div className="mx-auto grid max-w-6xl overflow-hidden rounded-2xl border border-black/10 bg-white shadow-[0_22px_60px_rgba(0,0,0,0.08)] lg:grid-cols-[0.92fr_1.08fr]">
-          <div className="relative overflow-hidden bg-[#f10606] p-8 text-white sm:p-10">
-            <div className="absolute -right-24 -top-24 h-64 w-64 rounded-full bg-white/12" />
-            <div className="absolute -bottom-28 left-10 h-72 w-72 rounded-full bg-black/10" />
-
-            <div className="relative">
-              <Link className="mb-10 block h-12 w-[170px]" href="/" aria-label="Ojaboy home">
-                <Image
-                  src="/logo/ojaboy-logo.svg"
-                  alt="Ojaboy"
-                  width={170}
-                  height={46}
-                  priority
-                  unoptimized
-                  className="h-full w-full brightness-0 invert"
-                />
-              </Link>
-
-              <p className="mb-3 text-xs font-black uppercase tracking-normal text-white/72">Market Intelligence Account</p>
-              <h1 className="max-w-md text-4xl font-black tracking-normal">Create your Ojaboy account</h1>
-              <p className="mt-4 max-w-md text-sm font-medium leading-7 text-white/82">
-                Save market lists, compare prices, create smart orders, and know when to buy before prices move.
+          <div className="relative hidden min-h-[420px] overflow-hidden bg-black text-white lg:block lg:min-h-full">
+            <Image
+              src="/auth/signup-market-shopper.png"
+              alt="Ojaboy market shopper using the app"
+              fill
+              priority
+              className="object-cover object-center"
+              sizes="(min-width: 1024px) 520px, 100vw"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/10 to-black/20" />
+            <Link className="absolute left-6 top-6 block h-12 w-[170px] sm:left-8 sm:top-8" href="/" aria-label="Ojaboy home">
+              <Image
+                src="/logo/ojaboy-logo.svg"
+                alt="Ojaboy"
+                width={170}
+                height={46}
+                priority
+                unoptimized
+                className="h-full w-full brightness-0 invert"
+              />
+            </Link>
+            <div className="absolute inset-x-0 bottom-0 p-6 sm:p-8">
+              <p className="text-xs font-black uppercase text-white/72">Market Intelligence Account</p>
+              <h1 className="mt-2 max-w-sm text-3xl font-black tracking-normal">Shop smarter with Ojaboy</h1>
+              <p className="mt-3 max-w-sm text-sm font-medium leading-7 text-white/82">
+                Compare prices, create orders, and get alerts before the market moves.
               </p>
-
-              <div className="mt-8 space-y-4">
-                {benefits.map((benefit) => (
-                  <div className="flex items-center gap-3 text-sm font-bold text-white/90" key={benefit}>
-                    <CheckCircle2 size={18} />
-                    {benefit}
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-10 grid gap-3 sm:grid-cols-3">
-                <div className="rounded-xl bg-white/12 p-4">
-                  <TrendingDown size={20} />
-                  <p className="mt-3 text-lg font-black">12</p>
-                  <p className="text-xs font-medium text-white/72">Price drops today</p>
-                </div>
-                <div className="rounded-xl bg-white/12 p-4">
-                  <MapPin size={20} />
-                  <p className="mt-3 text-lg font-black">24</p>
-                  <p className="text-xs font-medium text-white/72">Markets tracked</p>
-                </div>
-                <div className="rounded-xl bg-white/12 p-4">
-                  <Bell size={20} />
-                  <p className="mt-3 text-lg font-black">Real-time</p>
-                  <p className="text-xs font-medium text-white/72">Price alerts</p>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -91,38 +57,13 @@ export default function SignupPage() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <label className="block">
+              <label className="block sm:col-span-2">
                 <span className="text-xs font-black uppercase text-black/45">Full Name</span>
                 <input className="mt-2 h-12 w-full rounded-lg border border-black/10 px-4 text-sm font-bold text-black outline-none placeholder:text-black/35 focus:border-[#f10606]/40" placeholder="Temiloluwa Ade" />
-              </label>
-              <label className="block">
-                <span className="text-xs font-black uppercase text-black/45">Phone Number</span>
-                <input className="mt-2 h-12 w-full rounded-lg border border-black/10 px-4 text-sm font-bold text-black outline-none placeholder:text-black/35 focus:border-[#f10606]/40" placeholder="+234 801 234 5678" />
               </label>
               <label className="block sm:col-span-2">
                 <span className="text-xs font-black uppercase text-black/45">Email Address</span>
                 <input className="mt-2 h-12 w-full rounded-lg border border-black/10 px-4 text-sm font-bold text-black outline-none placeholder:text-black/35 focus:border-[#f10606]/40" placeholder="you@example.com" type="email" />
-              </label>
-              <label className="block">
-                <span className="text-xs font-black uppercase text-black/45">Primary Location</span>
-                <select className="mt-2 h-12 w-full rounded-lg border border-black/10 bg-white px-4 text-sm font-bold text-black outline-none focus:border-[#f10606]/40" defaultValue="">
-                  <option value="" disabled>Choose location</option>
-                  <option>Lagos Island</option>
-                  <option>Lekki</option>
-                  <option>Ikeja</option>
-                  <option>Yaba</option>
-                  <option>Surulere</option>
-                </select>
-              </label>
-              <label className="block">
-                <span className="text-xs font-black uppercase text-black/45">Primary Use</span>
-                <select className="mt-2 h-12 w-full rounded-lg border border-black/10 bg-white px-4 text-sm font-bold text-black outline-none focus:border-[#f10606]/40" defaultValue="">
-                  <option value="" disabled>Choose use case</option>
-                  <option>Home shopping</option>
-                  <option>Restaurant buying</option>
-                  <option>Retail/resale</option>
-                  <option>Market research</option>
-                </select>
               </label>
               <label className="block sm:col-span-2">
                 <span className="text-xs font-black uppercase text-black/45">Password</span>
