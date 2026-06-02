@@ -3,8 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { clearAuthSession, getAuthSession, type AuthUser } from "@/lib/authSession";
+import { clearAuthSession } from "@/lib/authSession";
+import { useAuthSession } from "@/lib/useAuthSession";
 import {
   Bell,
   Bot,
@@ -52,19 +52,15 @@ export function DashboardSidebar({
 }: DashboardSidebarProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const [user, setUser] = useState<AuthUser | null>(null);
-
-  useEffect(() => {
-    setUser(getAuthSession()?.user ?? null);
-  }, []);
+  const user = useAuthSession()?.user ?? null;
 
   function handleLogout() {
     clearAuthSession();
     router.replace("/login");
   }
 
-  const displayName = user?.fullName ?? "Temiloluwa";
-  const displayInitial = displayName.trim().charAt(0).toUpperCase() || "T";
+  const displayName = user?.fullName ?? "User";
+  const displayInitial = displayName.trim().charAt(0).toUpperCase() || "U";
   const planLabel = user?.role ? `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)} Account` : "Free Plan";
 
   return (

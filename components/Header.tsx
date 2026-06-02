@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Menu } from "lucide-react";
+import { HeaderAuthActions } from "@/components/HeaderAuthActions";
 import Logo from "./Logo";
 
 const navItems = [
@@ -26,12 +27,7 @@ export default function Header() {
         </nav>
 
         <div className="hidden items-center gap-4 sm:flex">
-          <Link className="rounded-lg border border-black/10 bg-white/80 px-7 py-3 text-sm font-bold text-black shadow-sm backdrop-blur" href="/login">
-            Log in
-          </Link>
-          <Link className="rounded-lg bg-[#f10606] px-7 py-3 text-sm font-bold text-white shadow-[0_16px_35px_rgba(241,6,6,0.25)]" href="/signup">
-            Sign Up
-          </Link>
+          <HeaderAuthActions />
         </div>
 
         <button className="flex h-11 w-11 items-center justify-center rounded-lg border border-black/10 bg-white/80 lg:hidden" aria-label="Open menu">

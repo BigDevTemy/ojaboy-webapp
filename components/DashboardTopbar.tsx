@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
-import { clearAuthSession, getAuthSession, type AuthUser } from "@/lib/authSession";
+import { useState } from "react";
+import { clearAuthSession } from "@/lib/authSession";
+import { useAuthSession } from "@/lib/useAuthSession";
 import {
   AlertTriangle,
   Bell,
@@ -57,19 +58,15 @@ export function DashboardTopbar({
   const router = useRouter();
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [user, setUser] = useState<AuthUser | null>(null);
-
-  useEffect(() => {
-    setUser(getAuthSession()?.user ?? null);
-  }, []);
+  const user = useAuthSession()?.user ?? null;
 
   function handleLogout() {
     clearAuthSession();
     router.replace("/login");
   }
 
-  const displayName = user?.fullName ?? "Temiloluwa";
-  const displayInitial = displayName.trim().charAt(0).toUpperCase() || "T";
+  const displayName = user?.fullName ?? "User";
+  const displayInitial = displayName.trim().charAt(0).toUpperCase() || "U";
   const planLabel = user?.role ? `${user.role.charAt(0).toUpperCase()}${user.role.slice(1)} Account` : "Free Plan";
 
   return (

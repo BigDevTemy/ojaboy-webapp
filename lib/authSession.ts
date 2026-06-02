@@ -14,6 +14,7 @@ export type AuthSession = {
 };
 
 const AUTH_SESSION_KEY = "ojaboy.auth.session";
+const AUTH_SESSION_EVENT = "ojaboy.auth.session-change";
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string");
@@ -42,15 +43,10 @@ export function isAuthSession(value: unknown): value is AuthSession {
 
 export function saveAuthSession(session: AuthSession) {
   window.localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify(session));
+  window.dispatchEvent(new Event(AUTH_SESSION_EVENT));
 }
 
-export function getAuthSession() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const value = window.localStorage.getItem(AUTH_SESSION_KEY);
-
+export function parseAuthSession(value: string | null) {
   if (!value) {
     return null;
   }
@@ -70,6 +66,39 @@ export function getAuthSession() {
   }
 }
 
+export function getAuthSessionSnapshot() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  return window.localStorage.getItem(AUTH_SESSION_KEY);
+}
+
+export function getAuthSession() {
+  return parseAuthSession(getAuthSessionSnapshot());
+}
+
+export function subscribeToAuthSession(listener: () => void) {
+  if (typeof window === "undefined") {
+    return () => {};
+  }
+
+  function handleStorage(event: StorageEvent) {
+    if (event.key === AUTH_SESSION_KEY) {
+      listener();
+    }
+  }
+
+  window.addEventListener("storage", handleStorage);
+  window.addEventListener(AUTH_SESSION_EVENT, listener);
+
+  return () => {
+    window.removeEventListener("storage", handleStorage);
+    window.removeEventListener(AUTH_SESSION_EVENT, listener);
+  };
+}
+
 export function clearAuthSession() {
   window.localStorage.removeItem(AUTH_SESSION_KEY);
+  window.dispatchEvent(new Event(AUTH_SESSION_EVENT));
 }
