@@ -5,36 +5,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { isAuthSession, saveAuthSession } from "@/lib/authSession";
 import { API_BASE_URL, GOOGLE_LOGIN_URL } from "@/Serverurls";
 
-type GoogleCredentialResponse = {
-  credential?: string;
-};
-
-declare global {
-  interface Window {
-    google?: {
-      accounts: {
-        id: {
-          initialize: (config: {
-            client_id: string;
-            callback: (response: GoogleCredentialResponse) => void;
-            use_fedcm_for_prompt?: boolean;
-          }) => void;
-          renderButton: (
-            parent: HTMLElement,
-            options: {
-              theme?: "outline" | "filled_blue" | "filled_black";
-              size?: "large" | "medium" | "small";
-              text?: "signin_with" | "signup_with" | "continue_with" | "signin";
-              shape?: "rectangular" | "pill" | "circle" | "square";
-              width?: number;
-            }
-          ) => void;
-        };
-      };
-    };
-  }
-}
-
 const googleLoginEndpoint = `${API_BASE_URL}${GOOGLE_LOGIN_URL}`;
 
 export function GoogleSsoButton() {

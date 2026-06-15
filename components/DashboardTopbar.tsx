@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { clearAuthSession } from "@/lib/authSession";
+import { logout } from "@/lib/authClient";
 import { useAuthSession } from "@/lib/useAuthSession";
 import {
   AlertTriangle,
@@ -60,8 +60,8 @@ export function DashboardTopbar({
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const user = useAuthSession()?.user ?? null;
 
-  function handleLogout() {
-    clearAuthSession();
+  async function handleLogout() {
+    await logout();
     router.replace("/login");
   }
 
@@ -176,7 +176,7 @@ export function DashboardTopbar({
                   <p className="truncate text-sm font-black text-black">{displayName}</p>
                   <p className="mt-1 truncate text-xs font-medium text-black/50">{user?.email ?? planLabel}</p>
                 </div>
-                <button className="flex h-11 w-full items-center gap-3 px-4 text-left text-sm font-black text-[#f10606] transition hover:bg-[#fff7f7]" type="button" onClick={handleLogout}>
+                <button className="flex h-11 w-full items-center gap-3 px-4 text-left text-sm font-black text-[#f10606] transition hover:bg-[#fff7f7]" type="button" onClick={() => void handleLogout()}>
                   <LogOut size={17} />
                   Logout
                 </button>

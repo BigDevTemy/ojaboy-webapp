@@ -1,4 +1,7 @@
+"use client";
+
 import Image from "next/image";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   Bot,
   CalendarDays,
@@ -8,6 +11,8 @@ import {
   ShoppingBasket,
   Sparkles,
 } from "lucide-react";
+import { AgentMessageContent } from "@/components/AgentMessageContent";
+import { askAgent } from "@/lib/agentChat";
 
 const prompts = [
   "Find the cheapest rice today",
@@ -16,18 +21,17 @@ const prompts = [
   "What changed since yesterday?",
 ];
 
-const messages = [
+type ChatMessage = {
+  id: string;
+  role: "assistant" | "user";
+  text: string;
+};
+
+const initialMessages: ChatMessage[] = [
   {
+    id: "welcome",
     role: "assistant",
-    text: "Tomatoes dropped 8% today across Oyingbo and Mile 12. If your target is below N18,000, wait a little longer.",
-  },
-  {
-    role: "user",
-    text: "What should I buy for a N50,000 basket?",
-  },
-  {
-    role: "assistant",
-    text: "Prioritize rice, beans, palm oil, and pepper from Mile 12. Current estimated savings: N4,500.",
+    text: "Ask me about market prices, comparisons, trends, orders, or shopping decisions.",
   },
 ];
 
@@ -38,6 +42,53 @@ const insightCards = [
 ];
 
 export function DashboardAiAssistant() {
+  const [messages, setMessages] = useState<ChatMessage[]>(initialMessages);
+  const [question, setQuestion] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [isLoading, messages]);
+
+  async function sendQuestion(value: string) {
+    const trimmedQuestion = value.trim();
+
+    if (!trimmedQuestion || isLoading) {
+      return;
+    }
+
+    setMessages((current) => [
+      ...current,
+      { id: crypto.randomUUID(), role: "user", text: trimmedQuestion },
+    ]);
+    setQuestion("");
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const response = await askAgent(trimmedQuestion);
+      setMessages((current) => [
+        ...current,
+        { id: crypto.randomUUID(), role: "assistant", text: response.answer },
+      ]);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "The agent is unavailable. Please try again.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void sendQuestion(question);
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -62,7 +113,13 @@ export function DashboardAiAssistant() {
               <p className="text-sm font-medium text-black/62">Get direct answers from market data, alerts, and shopping trends.</p>
               <div className="mt-4 flex flex-wrap gap-3">
                 {prompts.map((prompt) => (
-                  <button className="rounded-lg border border-black/10 bg-white px-3 py-2 text-xs font-black text-black/72 shadow-sm transition hover:text-[#f10606]" key={prompt} type="button">
+                  <button
+                    className="rounded-lg border border-black/10 bg-white px-3 py-2 text-xs font-black text-black/72 shadow-sm transition hover:text-[#f10606] disabled:cursor-not-allowed disabled:opacity-60"
+                    key={prompt}
+                    type="button"
+                    onClick={() => void sendQuestion(prompt)}
+                    disabled={isLoading}
+                  >
                     {prompt}
                   </button>
                 ))}
@@ -75,29 +132,58 @@ export function DashboardAiAssistant() {
           </div>
 
           <div className="border-t border-[#ffd6d6] bg-white p-5">
-            <div className="space-y-4">
-              {messages.map((message, index) => {
+            <div className="max-h-[430px] space-y-4 overflow-y-auto">
+              {messages.map((message) => {
                 const isUser = message.role === "user";
 
-                return (
-                  <div className={`flex ${isUser ? "justify-end" : "justify-start"}`} key={`${message.role}-${index}`}>
-                    <div className={`max-w-[78%] rounded-xl px-4 py-3 text-sm font-medium leading-6 ${isUser ? "bg-[#f10606] text-white" : "bg-[#fbfbfb] text-black/72"}`}>
+                return isUser ? (
+                  <div className="flex justify-end" key={message.id}>
+                    <div className="max-w-[78%] break-words rounded-xl rounded-tr-sm bg-[#f10606] px-4 py-3 text-sm font-bold leading-6 text-white">
                       {message.text}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-3" key={message.id}>
+                    <span className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#ffe2e2] text-[#f10606]">
+                      <Bot size={16} />
+                    </span>
+                    <div className="min-w-0 max-w-[82%] rounded-xl rounded-tl-sm bg-[#fbfbfb] px-4 py-3 text-sm font-medium leading-6 text-black/72">
+                      <AgentMessageContent answer={message.text} />
                     </div>
                   </div>
                 );
               })}
+              {isLoading ? (
+                <div className="flex items-center gap-2 text-sm font-bold text-black/45">
+                  <Bot size={16} className="text-[#f10606]" />
+                  Ojaboy is thinking...
+                </div>
+              ) : null}
+              {error ? (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-sm font-bold text-red-700">
+                  {error}
+                </p>
+              ) : null}
+              <div ref={messagesEndRef} />
             </div>
 
-            <div className="relative mt-5">
+            <form className="relative mt-5" onSubmit={handleSubmit}>
               <input
                 className="h-12 w-full rounded-lg border border-black/10 bg-white px-4 pr-14 text-sm font-medium text-black outline-none shadow-sm placeholder:text-black/38"
                 placeholder="Ask a market question..."
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                disabled={isLoading}
               />
-              <button className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg bg-[#f10606] text-white shadow-[0_12px_24px_rgba(241,6,6,0.24)]" type="button" aria-label="Send AI question">
+              <button
+                className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg bg-[#f10606] text-white shadow-[0_12px_24px_rgba(241,6,6,0.24)] disabled:cursor-not-allowed disabled:opacity-60"
+                type="submit"
+                aria-label="Send AI question"
+                disabled={isLoading || !question.trim()}
+              >
                 <Send size={17} />
               </button>
-            </div>
+            </form>
           </div>
         </section>
 

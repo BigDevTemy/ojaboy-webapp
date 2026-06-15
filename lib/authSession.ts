@@ -1,15 +1,26 @@
 export type AuthUser = {
   id: string;
   email: string;
-  fullName: string;
-  role: string;
-  authProviders: string[];
+  fullName?: string;
+  phoneNumber?: string;
+  role?: string;
+  authProviders?: string[];
+  emailVerified?: boolean;
+  hasAddress?: boolean;
+  hasDefaultAddress?: boolean;
+  defaultAddress?: {
+    id: string;
+    label: string;
+    formattedAddress: string;
+    isDefault: boolean;
+    deliveryZone?: unknown;
+  } | null;
 };
 
 export type AuthSession = {
   user: AuthUser;
   accessToken: string;
-  tokenType: string;
+  tokenType?: string;
   expiresIn: string;
 };
 
@@ -32,12 +43,25 @@ export function isAuthSession(value: unknown): value is AuthSession {
     !!user &&
     typeof user.id === "string" &&
     typeof user.email === "string" &&
-    typeof user.fullName === "string" &&
-    typeof user.role === "string" &&
-    isStringArray(user.authProviders) &&
+    (user.fullName === undefined || typeof user.fullName === "string") &&
+    (user.phoneNumber === undefined || typeof user.phoneNumber === "string") &&
+    (user.role === undefined || typeof user.role === "string") &&
+    (user.authProviders === undefined || isStringArray(user.authProviders)) &&
+    (user.emailVerified === undefined || typeof user.emailVerified === "boolean") &&
+    (user.hasAddress === undefined || typeof user.hasAddress === "boolean") &&
+    (user.hasDefaultAddress === undefined ||
+      typeof user.hasDefaultAddress === "boolean") &&
     typeof session.accessToken === "string" &&
-    typeof session.tokenType === "string" &&
+    (session.tokenType === undefined || typeof session.tokenType === "string") &&
     typeof session.expiresIn === "string"
+  );
+}
+
+export function requiresDefaultAddress(session: AuthSession | null) {
+  return Boolean(
+    session &&
+      (session.user.hasAddress === false ||
+        session.user.hasDefaultAddress !== true),
   );
 }
 

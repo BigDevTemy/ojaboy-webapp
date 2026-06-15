@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { clearAuthSession } from "@/lib/authSession";
+import { logout } from "@/lib/authClient";
 import { useAuthSession } from "@/lib/useAuthSession";
 import {
   Bell,
@@ -54,8 +54,8 @@ export function DashboardSidebar({
   const router = useRouter();
   const user = useAuthSession()?.user ?? null;
 
-  function handleLogout() {
-    clearAuthSession();
+  async function handleLogout() {
+    await logout();
     router.replace("/login");
   }
 
@@ -161,7 +161,7 @@ export function DashboardSidebar({
       <button
         className={`mt-3 flex h-12 items-center justify-center gap-3 rounded-lg border border-black/10 text-sm font-black text-[#f10606] transition hover:bg-[#fff7f7] ${isCollapsed ? "lg:px-0" : "px-3"}`}
         type="button"
-        onClick={handleLogout}
+        onClick={() => void handleLogout()}
         title={isCollapsed ? "Logout" : undefined}
       >
         <LogOut size={18} />

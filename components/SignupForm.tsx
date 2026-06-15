@@ -1,49 +1,44 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useState, type FormEvent } from "react";
 import { GoogleSsoButton } from "@/components/GoogleSsoButton";
-import { isAuthSession, saveAuthSession } from "@/lib/authSession";
+import { getApiErrorMessage } from "@/lib/apiError";
 import { API_BASE_URL, REGISTER_URL } from "@/Serverurls";
-import { LockKeyhole } from "lucide-react";
+import { LockKeyhole, MailCheck } from "lucide-react";
 
 const registerEndpoint = `${API_BASE_URL}${REGISTER_URL}`;
 
-async function getErrorMessage(response: Response) {
-  try {
-    const body = (await response.json()) as { message?: unknown; error?: unknown };
-    const message = body.message;
+type SignupVerificationResponse = {
+  message: string;
+  email: string;
+  requiresEmailVerification: true;
+};
 
-    if (typeof message === "string" && message.trim()) {
-      return message;
-    }
-
-    if (Array.isArray(message)) {
-      const messages = message.filter((item): item is string => typeof item === "string" && !!item.trim());
-
-      if (messages.length) {
-        return messages.join(" ");
-      }
-    }
-
-    if (typeof body.error === "string" && body.error.trim()) {
-      return body.error;
-    }
-  } catch {
-    // The API may return an empty or non-JSON error body.
+function isSignupVerificationResponse(
+  value: unknown,
+): value is SignupVerificationResponse {
+  if (!value || typeof value !== "object") {
+    return false;
   }
 
-  return "Signup failed. Please check your details and try again.";
+  const response = value as Partial<SignupVerificationResponse>;
+
+  return (
+    typeof response.message === "string" &&
+    typeof response.email === "string" &&
+    response.requiresEmailVerification === true
+  );
 }
 
 export function SignupForm() {
-  const router = useRouter();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [verification, setVerification] =
+    useState<SignupVerificationResponse | null>(null);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -71,22 +66,66 @@ export function SignupForm() {
       });
 
       if (!response.ok) {
-        throw new Error(await getErrorMessage(response));
+        throw new Error(
+          await getApiErrorMessage(
+            response,
+            "Signup failed. Please check your details and try again.",
+          ),
+        );
       }
 
-      const session = (await response.json()) as unknown;
+      const result = (await response.json()) as unknown;
 
-      if (!isAuthSession(session)) {
-        throw new Error("Signup returned an invalid session.");
+      if (!isSignupVerificationResponse(result)) {
+        throw new Error("Signup returned an invalid verification response.");
       }
 
-      saveAuthSession(session);
-      router.replace("/dashboard");
+      setVerification(result);
+      setPassword("");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Signup failed. Please try again.");
     } finally {
       setIsLoading(false);
     }
+  }
+
+  if (verification) {
+    return (
+      <div className="flex min-h-full flex-col justify-center p-6 sm:p-8 lg:p-10">
+        <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+          <MailCheck size={28} />
+        </div>
+        <p className="mt-6 text-sm font-black uppercase text-emerald-600">
+          Verify your email
+        </p>
+        <h2 className="mt-2 text-3xl font-black tracking-normal text-black">
+          Check your inbox
+        </h2>
+        <p className="mt-3 text-sm font-medium leading-7 text-black/58">
+          {verification.message}
+        </p>
+        <div className="mt-5 rounded-xl border border-black/10 bg-[#fbfbfb] px-4 py-3 text-sm font-black text-black">
+          {verification.email}
+        </div>
+        <p className="mt-4 text-xs font-medium leading-5 text-black/50">
+          Open the verification link in the email, then return to log in. Check
+          your spam folder if it does not arrive shortly.
+        </p>
+        <Link
+          className="mt-6 flex h-12 items-center justify-center rounded-lg bg-[#f10606] text-sm font-black text-white"
+          href="/login"
+        >
+          Go to Login
+        </Link>
+        <button
+          className="mt-3 h-11 text-sm font-black text-black/55 transition hover:text-[#f10606]"
+          type="button"
+          onClick={() => setVerification(null)}
+        >
+          Use a different email
+        </button>
+      </div>
+    );
   }
 
   return (

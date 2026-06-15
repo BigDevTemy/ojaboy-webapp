@@ -1,12 +1,26 @@
 "use client";
 
 import { useState } from "react";
+import { DashboardAddresses } from "@/components/DashboardAddresses";
 import { DashboardSidebar } from "@/components/DashboardSidebar";
 import { DashboardTopbar } from "@/components/DashboardTopbar";
+import { requiresDefaultAddress } from "@/lib/authSession";
+import { useAuthSession } from "@/lib/useAuthSession";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const session = useAuthSession();
+
+  if (requiresDefaultAddress(session)) {
+    return (
+      <main className="min-h-screen bg-[#fbfbfb] px-5 py-8 text-black sm:px-8">
+        <div className="mx-auto max-w-4xl">
+          <DashboardAddresses forceAddAddress />
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#fbfbfb] text-black">

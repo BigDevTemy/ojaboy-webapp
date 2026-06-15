@@ -1,15 +1,73 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Bot, Headphones, MessageSquare, Send, X } from "lucide-react";
+import { AgentMessageContent } from "@/components/AgentMessageContent";
+import { askAgent } from "@/lib/agentChat";
 
-const starterMessages = [
-  "Hi, I am an Ojaboy agent. I can help with market prices, orders, or shopping support.",
-  "What would you like to check today?",
+type ChatMessage = {
+  id: string;
+  role: "assistant" | "user";
+  text: string;
+};
+
+const starterMessages: ChatMessage[] = [
+  {
+    id: "welcome",
+    role: "assistant",
+    text: "Hi, I am an Ojaboy agent. I can help with market prices, orders, or shopping support.",
+  },
+  {
+    id: "prompt",
+    role: "assistant",
+    text: "What would you like to check today?",
+  },
 ];
 
 export default function AgentChatWidget() {
   const [isOpen, setIsOpen] = useState(false);
+  const [messages, setMessages] = useState<ChatMessage[]>(starterMessages);
+  const [question, setQuestion] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [isLoading, messages]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedQuestion = question.trim();
+
+    if (!trimmedQuestion || isLoading) {
+      return;
+    }
+
+    setMessages((current) => [
+      ...current,
+      { id: crypto.randomUUID(), role: "user", text: trimmedQuestion },
+    ]);
+    setQuestion("");
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const response = await askAgent(trimmedQuestion);
+      setMessages((current) => [
+        ...current,
+        { id: crypto.randomUUID(), role: "assistant", text: response.answer },
+      ]);
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "The agent is unavailable. Please try again.",
+      );
+    } finally {
+      setIsLoading(false);
+    }
+  }
 
   return (
     <div className="fixed bottom-5 right-5 z-[70] flex flex-col items-end gap-4">
@@ -39,32 +97,52 @@ export default function AgentChatWidget() {
           </header>
 
           <div className="max-h-[330px] space-y-3 overflow-y-auto bg-[#fffafa] px-5 py-4">
-            {starterMessages.map((message) => (
-              <div className="flex items-start gap-2" key={message}>
-                <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#ffe2e2] text-[#f10606]">
-                  <Bot size={15} />
-                </span>
-                <p className="rounded-2xl rounded-tl-md bg-white px-4 py-3 text-sm font-medium leading-6 text-black/72 shadow-sm">
-                  {message}
-                </p>
+            {messages.map((message) =>
+              message.role === "assistant" ? (
+                <div className="flex items-start gap-2" key={message.id}>
+                  <span className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#ffe2e2] text-[#f10606]">
+                    <Bot size={15} />
+                  </span>
+                  <div className="min-w-0 rounded-2xl rounded-tl-md bg-white px-4 py-3 text-sm font-medium leading-6 text-black/72 shadow-sm">
+                    <AgentMessageContent answer={message.text} />
+                  </div>
+                </div>
+              ) : (
+                <div
+                  className="ml-auto max-w-[78%] rounded-2xl rounded-tr-md bg-[#f10606] px-4 py-3 text-sm font-bold leading-6 text-white"
+                  key={message.id}
+                >
+                  {message.text}
+                </div>
+              ),
+            )}
+            {isLoading ? (
+              <div className="flex items-center gap-2 text-xs font-bold text-black/45">
+                <Bot size={15} className="text-[#f10606]" />
+                Ojaboy is thinking...
               </div>
-            ))}
-
-            <div className="ml-auto max-w-[78%] rounded-2xl rounded-tr-md bg-[#f10606] px-4 py-3 text-sm font-bold leading-6 text-white">
-              I need help comparing food prices.
-            </div>
+            ) : null}
+            {error ? <p className="text-xs font-bold text-[#f10606]">{error}</p> : null}
+            <div ref={messagesEndRef} />
           </div>
 
-          <form className="flex items-center gap-3 border-t border-black/10 bg-white p-4">
+          <form
+            className="flex items-center gap-3 border-t border-black/10 bg-white p-4"
+            onSubmit={handleSubmit}
+          >
             <input
               className="h-11 min-w-0 flex-1 rounded-lg border border-black/10 bg-[#fafafa] px-4 text-sm outline-none placeholder:text-black/40"
               placeholder="Type your message..."
               aria-label="Type your message"
+              value={question}
+              onChange={(event) => setQuestion(event.target.value)}
+              disabled={isLoading}
             />
             <button
-              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#f10606] text-white shadow-[0_12px_24px_rgba(241,6,6,0.22)]"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg bg-[#f10606] text-white shadow-[0_12px_24px_rgba(241,6,6,0.22)] disabled:cursor-not-allowed disabled:opacity-60"
               type="submit"
               aria-label="Send message"
+              disabled={isLoading || !question.trim()}
             >
               <Send size={17} />
             </button>
