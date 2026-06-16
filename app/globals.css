@@ -130,3 +130,42 @@ button {
 .dashboard-sidebar-scroll::-webkit-scrollbar-thumb:hover {
   background: rgba(241, 6, 6, 0.42);
 }
+
+.customer-app-shell {
+  max-width: 30rem;
+}
+
+.customer-app-safe-top {
+  padding-top: max(0.75rem, env(safe-area-inset-top));
+}
+
+.customer-app-safe-bottom {
+  padding-bottom: max(1.25rem, env(safe-area-inset-bottom));
+}
+
+.customer-app-navigation {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+.customer-mobile-agent,
+.customer-mobile-ai-link {
+  right: 1rem;
+  bottom: calc(6.25rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 30rem) {
+  .customer-mobile-agent,
+  .customer-mobile-ai-link {
+    right: calc((100vw - 30rem) / 2 + 1rem);
+  }
+}
+
+@media (display-mode: standalone) {
+  .customer-app-background {
+    background: #fbfbfb;
+  }
+
+  .customer-app-shell {
+    box-shadow: none;
+  }
+}

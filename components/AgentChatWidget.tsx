@@ -24,7 +24,11 @@ const starterMessages: ChatMessage[] = [
   },
 ];
 
-export default function AgentChatWidget() {
+export default function AgentChatWidget({
+  variant = "default",
+}: {
+  variant?: "default" | "customer-mobile";
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>(starterMessages);
   const [question, setQuestion] = useState("");
@@ -70,9 +74,21 @@ export default function AgentChatWidget() {
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-[70] flex flex-col items-end gap-4">
+    <div
+      className={`fixed z-[70] flex flex-col items-end gap-3 ${
+        variant === "customer-mobile"
+          ? "customer-mobile-agent"
+          : "bottom-5 right-5"
+      }`}
+    >
       {isOpen ? (
-        <section className="w-[min(calc(100vw-2.5rem),380px)] overflow-hidden rounded-2xl border border-black/10 bg-white shadow-[0_26px_80px_rgba(0,0,0,0.22)]">
+        <section
+          className={`overflow-hidden rounded-2xl border border-black/10 bg-white shadow-[0_26px_80px_rgba(0,0,0,0.22)] ${
+            variant === "customer-mobile"
+              ? "w-[min(calc(100vw-2rem),380px)]"
+              : "w-[min(calc(100vw-2.5rem),380px)]"
+          }`}
+        >
           <header className="flex items-center justify-between bg-[#f10606] px-5 py-4 text-white">
             <div className="flex items-center gap-3">
               <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white/18">
@@ -151,13 +167,15 @@ export default function AgentChatWidget() {
       ) : null}
 
       <button
-        className="group relative flex h-16 w-16 items-center justify-center rounded-full bg-[#f10606] text-white shadow-[0_20px_45px_rgba(241,6,6,0.35)] transition hover:-translate-y-0.5 hover:bg-[#d90505]"
+        className={`group relative flex items-center justify-center rounded-full border-4 border-white bg-[#f10606] text-white shadow-[0_20px_45px_rgba(241,6,6,0.42)] transition hover:-translate-y-0.5 hover:bg-[#d90505] ${
+          variant === "customer-mobile" ? "h-14 w-14" : "h-16 w-16"
+        }`}
         type="button"
         aria-label={isOpen ? "Close agent chat" : "Open agent chat"}
         onClick={() => setIsOpen((value) => !value)}
       >
         <span className="absolute -right-0.5 -top-0.5 h-4 w-4 rounded-full border-2 border-white bg-[#36c96d]" />
-        <MessageSquare size={28} />
+        <MessageSquare size={variant === "customer-mobile" ? 24 : 28} />
         <span className="pointer-events-none absolute right-[74px] hidden whitespace-nowrap rounded-lg bg-black px-3 py-2 text-xs font-bold text-white shadow-lg group-hover:block">
           Chat with an agent
         </span>

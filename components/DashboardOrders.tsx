@@ -546,6 +546,20 @@ export function DashboardOrders() {
     }
   }, []);
 
+  const refreshOrders = useCallback(async () => {
+    await Promise.all([
+      loadOrderStats(),
+      loadCurrentOrder(),
+      loadOrderHistory(orderHistoryPage, orderHistoryLimit),
+    ]);
+  }, [
+    loadCurrentOrder,
+    loadOrderHistory,
+    loadOrderStats,
+    orderHistoryLimit,
+    orderHistoryPage,
+  ]);
+
   const openOrderDetails = useCallback(async (orderId: string) => {
     setSelectedOrderId(orderId);
     setSelectedOrder(null);
@@ -692,7 +706,7 @@ export function DashboardOrders() {
             <CalendarDays size={18} />
             May 24, 2025
           </div>
-          <DashboardCreateOrderModal />
+          <DashboardCreateOrderModal onOrderCreated={refreshOrders} />
         </div>
       </div>
 

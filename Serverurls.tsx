@@ -1,4 +1,5 @@
-export const API_BASE_URL = "http://localhost:5000/";
+//export const API_BASE_URL = "http://localhost:5000/";
+export const API_BASE_URL = "https://ojaboy-backend-1092974911193.us-central1.run.app/";
 
 export const LOGIN_URL = "auth/login";
 export const REGISTER_URL = "auth/register";
@@ -8,7 +9,18 @@ export const REFRESH_TOKEN_URL = "auth/refresh";
 export const LOGOUT_URL = "auth/logout";
 export const PROFILE_URL = "auth/profile";
 export const ORDERS_STATS_URL = "orders/stats";
+export const ORDERS_URL = "orders";
 export const CURRENT_ORDER_URL = "orders/current";
 export const ORDER_HISTORY_URL = "orders/mine";
 export const ORDER_DETAILS_URL = "orders/mine";
+export const ORDERS_QUOTE_URL = "orders/quote";
+export const CREATE_ORDER_URL = "orders";
+export const VERIFY_PAYMENT_URL = "payments/verify";
 export const ADDRESSES_URL = "addresses";
+export const WISHLISTS_URL = "wishlists";
+export const PRODUCTS_URL = "products";
+export const PRICE_ALERTS_URL = "price-alerts";
+export const NOTIFICATIONS_URL = "notifications";
+export const MARKETS_URL = "markets";
+export const MARKET_PRICES_URL = "market-prices";
+export const USERS_URL = "users";

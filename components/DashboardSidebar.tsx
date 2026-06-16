@@ -15,6 +15,7 @@ import {
   LineChart,
   LogOut,
   MessageSquare,
+  PackageSearch,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
@@ -26,6 +27,7 @@ import {
 
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+  { label: "Products", icon: PackageSearch, href: "/dashboard/products" },
   { label: "Market Prices", icon: LineChart, href: "/dashboard/market-prices" },
   { label: "Markets", icon: Store, href: "/dashboard/markets" },
   { label: "Watchlist", icon: Star, href: "/dashboard/watchlist" },
