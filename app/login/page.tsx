@@ -22,7 +22,7 @@ export default function LoginPage() {
           </div>
           <LoginForm />
           <div className="mt-5 flex items-center justify-between text-sm font-medium">
-            <a className="text-black/55 hover:text-[#f10606]" href="#">Forgot password?</a>
+            <Link className="text-black/55 hover:text-[#f10606]" href="/forgot-password">Forgot password?</Link>
             <Link className="font-black text-[#f10606]" href="/signup">Create account</Link>
           </div>
         </div>

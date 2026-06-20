@@ -709,7 +709,7 @@ export function DashboardMarketPrices() {
             type="button"
             onClick={() => void loadByProduct(filterProductId)}
           >
-            {busyAction === "product-route" ? "Loading..." : "Use /product/:id"}
+            {busyAction === "product-route" ? "Loading..." : ""}
           </button>
           <button
             className="text-xs font-black text-black/50 transition hover:text-[#f10606] disabled:opacity-40"
@@ -717,7 +717,7 @@ export function DashboardMarketPrices() {
             type="button"
             onClick={() => void loadByMarket(filterMarketId)}
           >
-            {busyAction === "market-route" ? "Loading..." : "Use /market/:id"}
+            {busyAction === "market-route" ? "Loading..." : ""}
           </button>
         </div>
       </section>

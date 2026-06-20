@@ -1,8 +1,10 @@
-//export const API_BASE_URL = "http://localhost:5000/";
-export const API_BASE_URL = "https://ojaboy-backend-1092974911193.us-central1.run.app/";
+export const API_BASE_URL = "http://localhost:5000/";
+//export const API_BASE_URL = "https://ojaboy-backend-1092974911193.us-central1.run.app/";
 
 export const LOGIN_URL = "auth/login";
 export const REGISTER_URL = "auth/register";
+export const FORGOT_PASSWORD_URL = "auth/forget-password";
+export const SET_PASSWORD_URL = "auth/set-password";
 export const VERIFY_EMAIL_URL = "auth/email/verify";
 export const GOOGLE_LOGIN_URL = "auth/google";
 export const REFRESH_TOKEN_URL = "auth/refresh";

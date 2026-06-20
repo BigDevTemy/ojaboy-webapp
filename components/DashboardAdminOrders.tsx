@@ -4,9 +4,11 @@ import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
   Eye,
   LoaderCircle,
   PackageCheck,
+  PencilLine,
   RefreshCw,
   Search,
   Download,
@@ -31,6 +33,20 @@ type AdminOrderItem = {
   totalPrice?: number;
 };
 
+type AdminBankTransferAccount = {
+  id: string;
+  providerReference?: string;
+  accountName?: string;
+  accountNumber?: string;
+  bankName?: string;
+  bankCode?: string;
+  amount?: number;
+  currency?: string;
+  accountExpiresAt?: string;
+  status: string;
+  paidAt?: string;
+};
+
 type AdminOrder = {
   id: string;
   userId?: string;
@@ -49,6 +65,20 @@ type AdminOrder = {
   createdAt?: string;
   updatedAt?: string;
   items: AdminOrderItem[];
+  paystackBankTransferAccounts: AdminBankTransferAccount[];
+};
+
+type PaymentRetryDetails = {
+  orderId: string;
+  reference: string;
+  status: string;
+  paymentAction?: string;
+  displayText?: string;
+  accountName?: string;
+  accountNumber?: string;
+  bankName?: string;
+  amount?: number;
+  currency?: string;
 };
 
 type Pagination = {
@@ -64,6 +94,7 @@ const ordersEndpoint = `${API_BASE_URL}${ORDERS_URL}`;
 const usersEndpoint = `${API_BASE_URL}${USERS_URL}`;
 const limitOptions = [20, 50, 100, 200];
 const orderStatuses = ["", "pending", "confirmed", "processing", "out_for_delivery", "delivered", "cancelled"];
+const editableOrderStatuses = orderStatuses.filter(Boolean);
 const paymentStatuses = ["", "pending", "paid", "failed", "refunded"];
 const exportFormats = ["xlsx", "csv"];
 const orderSearchOptions: { label: string; value: OrderSearchMode }[] = [
@@ -161,6 +192,58 @@ function parseOrderItem(value: unknown, index: number): AdminOrderItem | null {
   };
 }
 
+function parseBankTransferAccount(value: unknown, index: number): AdminBankTransferAccount | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const generatedRawProviderData = isRecord(value.generatedRawProviderData)
+    ? value.generatedRawProviderData
+    : null;
+  const rawBank = generatedRawProviderData && isRecord(generatedRawProviderData.bank)
+    ? generatedRawProviderData.bank
+    : null;
+  const id = readText(value, ["id"]) || `bank-transfer-${index}`;
+  const status =
+    readText(value, ["status"]) ||
+    (generatedRawProviderData ? readText(generatedRawProviderData, ["status"]) : "");
+
+  if (!id || !status) {
+    return null;
+  }
+
+  return {
+    id,
+    providerReference:
+      readText(value, ["providerReference"]) ||
+      (generatedRawProviderData ? readText(generatedRawProviderData, ["reference"]) : "") ||
+      undefined,
+    accountName:
+      readText(value, ["accountName"]) ||
+      (generatedRawProviderData ? readText(generatedRawProviderData, ["account_name", "accountName"]) : "") ||
+      undefined,
+    accountNumber:
+      readText(value, ["accountNumber"]) ||
+      (generatedRawProviderData ? readText(generatedRawProviderData, ["account_number", "accountNumber"]) : "") ||
+      undefined,
+    bankName:
+      readText(value, ["bankName"]) ||
+      (rawBank ? readText(rawBank, ["name"]) : "") ||
+      undefined,
+    bankCode: readText(value, ["bankCode"]) || (rawBank ? readText(rawBank, ["code", "slug"]) : "") || undefined,
+    amount:
+      readNumber(value, ["amount"]) ??
+      (generatedRawProviderData ? readNumber(generatedRawProviderData, ["amount"]) : undefined),
+    currency: readText(value, ["currency"]) || undefined,
+    accountExpiresAt:
+      readText(value, ["accountExpiresAt"]) ||
+      (generatedRawProviderData ? readText(generatedRawProviderData, ["account_expires_at", "accountExpiresAt"]) : "") ||
+      undefined,
+    status,
+    paidAt: readText(value, ["paidAt"]) || undefined,
+  };
+}
+
 function parseOrder(value: unknown): AdminOrder | null {
   if (!isRecord(value)) {
     return null;
@@ -178,6 +261,14 @@ function parseOrder(value: unknown): AdminOrder | null {
   const items = Array.isArray(value.items)
     ? value.items.flatMap((item, index) => {
         const parsed = parseOrderItem(item, index);
+        return parsed ? [parsed] : [];
+      })
+    : [];
+  const bankTransferAccountsValue =
+    value.paystackBankTransferAccounts ?? value.paystackBankTransferAccount;
+  const bankTransferAccounts = Array.isArray(bankTransferAccountsValue)
+    ? bankTransferAccountsValue.flatMap((account, index) => {
+        const parsed = parseBankTransferAccount(account, index);
         return parsed ? [parsed] : [];
       })
     : [];
@@ -206,6 +297,7 @@ function parseOrder(value: unknown): AdminOrder | null {
     createdAt: readText(value, ["createdAt"]) || undefined,
     updatedAt: readText(value, ["updatedAt"]) || undefined,
     items,
+    paystackBankTransferAccounts: bankTransferAccounts,
   };
 }
 
@@ -242,6 +334,18 @@ function formatMoney(value?: number) {
   }).format(value);
 }
 
+function formatPaymentAmount(value?: number, currency = "NGN") {
+  if (value === undefined) {
+    return "Pending";
+  }
+
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(value / 100);
+}
+
 function formatDate(value?: string) {
   if (!value) {
     return "Not available";
@@ -263,11 +367,44 @@ function formatLabel(value: string) {
   return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function parsePaymentRetryDetails(orderId: string, value: unknown): PaymentRetryDetails | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const charge = isRecord(value.charge) ? value.charge : null;
+  const chargeData = charge && isRecord(charge.data) ? charge.data : null;
+  const bank = chargeData && isRecord(chargeData.bank) ? chargeData.bank : null;
+  const reference = readText(value, ["reference"]) || (chargeData ? readText(chargeData, ["reference"]) : "");
+
+  if (!reference) {
+    return null;
+  }
+
+  return {
+    orderId,
+    reference,
+    status: readText(value, ["status"]) || (chargeData ? readText(chargeData, ["status"]) : "") || "pending",
+    paymentAction: readText(value, ["paymentAction"]) || undefined,
+    displayText: chargeData ? readText(chargeData, ["display_text", "displayText"]) || undefined : undefined,
+    accountName: chargeData ? readText(chargeData, ["account_name", "accountName"]) || undefined : undefined,
+    accountNumber: chargeData ? readText(chargeData, ["account_number", "accountNumber"]) || undefined : undefined,
+    bankName: bank ? readText(bank, ["name"]) || undefined : undefined,
+    amount: chargeData ? readNumber(chargeData, ["amount"]) : undefined,
+    currency: chargeData ? readText(chargeData, ["currency"]) || undefined : undefined,
+  };
+}
+
 export function DashboardAdminOrders() {
   const today = useMemo(() => getTodayInputValue(), []);
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<AdminOrder | null>(null);
+  const [statusEditorOrder, setStatusEditorOrder] = useState<AdminOrder | null>(null);
+  const [paymentRetryDetails, setPaymentRetryDetails] = useState<PaymentRetryDetails | null>(null);
+  const [statusDraft, setStatusDraft] = useState("");
+  const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+  const [bulkStatus, setBulkStatus] = useState("");
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(50);
   const [from, setFrom] = useState(today);
@@ -283,6 +420,7 @@ export function DashboardAdminOrders() {
   const [isLoading, setIsLoading] = useState(true);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
 
   const filteredUsers = useMemo(() => {
     const query = userSearch.trim().toLowerCase();
@@ -338,6 +476,9 @@ export function DashboardAdminOrders() {
     );
   }, [visibleOrders]);
 
+  const selectedOrderIdSet = useMemo(() => new Set(selectedOrderIds), [selectedOrderIds]);
+  const allVisibleOrdersSelected = visibleOrders.length > 0 && visibleOrders.every((order) => selectedOrderIdSet.has(order.id));
+
   const loadUsers = useCallback(async () => {
     try {
       const response = await authenticatedFetch(usersEndpoint, {
@@ -356,6 +497,7 @@ export function DashboardAdminOrders() {
   const loadOrders = useCallback(async () => {
     setIsLoading(true);
     setError("");
+    setNotice("");
 
     const params = new URLSearchParams({
       page: String(page),
@@ -379,6 +521,7 @@ export function DashboardAdminOrders() {
       }
 
       setOrders(parseList(body, "orders", parseOrder));
+      setSelectedOrderIds([]);
       setPagination(parsePagination(body, { page, limit }));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load orders.");
@@ -406,6 +549,7 @@ export function DashboardAdminOrders() {
   async function loadOrderDetails(id: string) {
     setBusyAction(`detail-${id}`);
     setError("");
+    setNotice("");
 
     try {
       const response = await authenticatedFetch(`${ordersEndpoint}/${id}`, {
@@ -428,6 +572,186 @@ export function DashboardAdminOrders() {
       setOrders((current) => current.map((item) => (item.id === order.id ? order : item)));
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load order.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function patchOrderStatus(order: AdminOrder, nextStatus: string) {
+    const response = await authenticatedFetch(`${ordersEndpoint}/${order.id}/status`, {
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        status: nextStatus,
+      }),
+    });
+    const body = (await response.json().catch(() => null)) as unknown;
+
+    if (!response.ok) {
+      throw new Error(getResponseMessage(body, `Unable to update order status (${response.status}).`));
+    }
+
+    const value = isRecord(body) ? body.order ?? body.data ?? body : body;
+    const updatedOrder = parseOrder(value);
+
+    return {
+      message: getResponseMessage(body, "Order status updated successfully."),
+      order: updatedOrder ?? { ...order, status: nextStatus },
+    };
+  }
+
+  function applyUpdatedOrders(updatedOrders: AdminOrder[]) {
+    setOrders((current) =>
+      current.map((item) => updatedOrders.find((updatedOrder) => updatedOrder.id === item.id) ?? item),
+    );
+    setSelectedOrder((current) =>
+      current ? updatedOrders.find((updatedOrder) => updatedOrder.id === current.id) ?? current : current,
+    );
+    setStatusEditorOrder((current) =>
+      current ? updatedOrders.find((updatedOrder) => updatedOrder.id === current.id) ?? current : current,
+    );
+  }
+
+  async function updateOrderStatus(order: AdminOrder, nextStatus: string) {
+    if (!nextStatus || nextStatus === order.status) return;
+
+    setBusyAction(`status-${order.id}`);
+    setError("");
+    setNotice("");
+
+    try {
+      const result = await patchOrderStatus(order, nextStatus);
+
+      applyUpdatedOrders([result.order]);
+      setNotice(result.message);
+      setStatusEditorOrder(null);
+      setStatusDraft("");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to update order status.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function updateSelectedOrderStatuses() {
+    if (!bulkStatus || selectedOrderIds.length === 0) return;
+
+    const selectedOrders = orders.filter((order) => selectedOrderIdSet.has(order.id) && order.status !== bulkStatus);
+
+    if (!selectedOrders.length) {
+      setNotice("Selected orders already have that status.");
+      return;
+    }
+
+    setBusyAction("bulk-status");
+    setError("");
+    setNotice("");
+
+    try {
+      const response = await authenticatedFetch(`${ordersEndpoint}/bulk/status`, {
+        method: "PATCH",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          orderIds: selectedOrders.map((order) => order.id),
+          status: bulkStatus,
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as unknown;
+
+      if (!response.ok) {
+        throw new Error(getResponseMessage(body, `Unable to update selected orders (${response.status}).`));
+      }
+
+      const responseOrders = isRecord(body) ? body.orders ?? body.data ?? body.updatedOrders : undefined;
+      const updatedOrders = Array.isArray(responseOrders)
+        ? responseOrders.flatMap((item) => {
+            const parsed = parseOrder(item);
+            return parsed ? [parsed] : [];
+          })
+        : selectedOrders.map((order) => ({ ...order, status: bulkStatus }));
+
+      applyUpdatedOrders(updatedOrders);
+      setNotice(getResponseMessage(body, `${selectedOrders.length} order${selectedOrders.length === 1 ? "" : "s"} updated successfully.`));
+      setSelectedOrderIds([]);
+      setBulkStatus("");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to update selected orders.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  function toggleOrderSelection(orderId: string) {
+    setSelectedOrderIds((current) =>
+      current.includes(orderId)
+        ? current.filter((selectedId) => selectedId !== orderId)
+        : [...current, orderId],
+    );
+  }
+
+  function toggleAllVisibleOrders() {
+    setSelectedOrderIds((current) => {
+      if (allVisibleOrdersSelected) {
+        return current.filter((selectedId) => !visibleOrders.some((order) => order.id === selectedId));
+      }
+
+      return Array.from(new Set([...current, ...visibleOrders.map((order) => order.id)]));
+    });
+  }
+
+  async function regenerateBankPaymentDetails(order: AdminOrder) {
+    const email = order.customerEmail?.trim();
+
+    if (!email) {
+      setError("Customer email is required to regenerate bank payment details.");
+      setNotice("");
+      return;
+    }
+
+    setBusyAction(`payment-${order.id}`);
+    setError("");
+    setNotice("Regenerating bank payment details...");
+
+    try {
+      const response = await authenticatedFetch(`${ordersEndpoint}/${order.id}/payment/retry`, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as unknown;
+
+      if (!response.ok) {
+        throw new Error(getResponseMessage(body, `Unable to regenerate bank payment details (${response.status}).`));
+      }
+
+      const value = isRecord(body) ? body.order ?? body.data ?? body : body;
+      const updatedOrder = parseOrder(value);
+
+      if (updatedOrder) {
+        applyUpdatedOrders([updatedOrder]);
+      }
+
+      const paymentDetails = parsePaymentRetryDetails(order.id, body);
+
+      if (paymentDetails) {
+        setPaymentRetryDetails(paymentDetails);
+      }
+
+      setNotice(getResponseMessage(body, "Bank payment details regenerated successfully. An email has been sent to the customer."));
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to regenerate bank payment details.");
+      setNotice("");
     } finally {
       setBusyAction("");
     }
@@ -675,15 +999,75 @@ export function DashboardAdminOrders() {
         <p className="rounded-xl bg-red-50 px-3 py-2.5 text-xs font-bold text-red-700">{error}</p>
       ) : null}
 
+      {notice ? (
+        <p className={`rounded-xl px-3 py-2.5 text-xs font-bold ${busyAction.startsWith("payment-") ? "bg-amber-50 text-amber-700" : "bg-emerald-50 text-emerald-700"}`}>
+          {busyAction.startsWith("payment-") ? (
+            <span className="inline-flex items-center gap-2">
+              <LoaderCircle className="animate-spin" size={14} />
+              {notice}
+            </span>
+          ) : (
+            notice
+          )}
+        </p>
+      ) : null}
+
+      {selectedOrderIds.length ? (
+        <section className="flex flex-col gap-3 rounded-xl border border-[#f10606]/15 bg-[#fff5f5] p-4 shadow-[0_14px_35px_rgba(0,0,0,0.04)] md:flex-row md:items-center md:justify-between">
+          <p className="text-sm font-black text-black">
+            {selectedOrderIds.length} order{selectedOrderIds.length === 1 ? "" : "s"} selected
+          </p>
+          <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+            <select
+              className="h-11 rounded-lg border border-black/10 bg-white px-3 text-sm font-black text-black/70 outline-none"
+              value={bulkStatus}
+              onChange={(event) => setBulkStatus(event.target.value)}
+            >
+              <option value="">Select status</option>
+              {editableOrderStatuses.map((item) => (
+                <option key={item} value={item}>{formatLabel(item)}</option>
+              ))}
+            </select>
+            <button
+              className="flex h-11 items-center justify-center gap-2 rounded-lg bg-[#f10606] px-4 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={!bulkStatus || busyAction === "bulk-status"}
+              type="button"
+              onClick={() => void updateSelectedOrderStatuses()}
+            >
+              {busyAction === "bulk-status" ? <LoaderCircle className="animate-spin" size={16} /> : <PencilLine size={16} />}
+              Update Status
+            </button>
+            <button
+              className="h-11 rounded-lg border border-black/10 bg-white px-4 text-sm font-black text-black/55 transition hover:text-[#f10606]"
+              type="button"
+              onClick={() => {
+                setSelectedOrderIds([]);
+                setBulkStatus("");
+              }}
+            >
+              Clear
+            </button>
+          </div>
+        </section>
+      ) : null}
+
       <section className="overflow-hidden rounded-xl border border-black/10 bg-white shadow-[0_14px_35px_rgba(0,0,0,0.04)]">
-        <div className="grid grid-cols-[1fr_1fr_0.65fr_0.65fr_0.65fr_0.6fr_0.35fr] gap-4 bg-[#fff5f5] px-5 py-4 text-xs font-black uppercase text-black/50">
+        <div className="grid grid-cols-[0.18fr_1fr_1fr_0.65fr_0.65fr_0.65fr_0.6fr_0.6fr] gap-4 bg-[#fff5f5] px-5 py-4 text-xs font-black uppercase text-black/50">
+          <label className="flex items-center" aria-label="Select all visible orders">
+            <input
+              className="h-4 w-4 accent-[#f10606]"
+              checked={allVisibleOrdersSelected}
+              type="checkbox"
+              onChange={toggleAllVisibleOrders}
+            />
+          </label>
           <span>Order</span>
           <span>Customer</span>
           <span>Status</span>
           <span>Payment</span>
           <span>Total</span>
           <span>Created</span>
-          <span className="text-right">View</span>
+          <span className="text-right">Actions</span>
         </div>
 
         {isLoading ? (
@@ -695,9 +1079,17 @@ export function DashboardAdminOrders() {
         ) : visibleOrders.length ? (
           visibleOrders.map((order) => (
             <article
-              className="grid grid-cols-[1fr_1fr_0.65fr_0.65fr_0.65fr_0.6fr_0.35fr] items-center gap-4 border-t border-black/10 px-5 py-4 text-sm"
+              className="grid grid-cols-[0.18fr_1fr_1fr_0.65fr_0.65fr_0.65fr_0.6fr_0.6fr] items-center gap-4 border-t border-black/10 px-5 py-4 text-sm"
               key={order.id}
             >
+              <label className="flex items-center" aria-label={`Select order ${order.id}`}>
+                <input
+                  className="h-4 w-4 accent-[#f10606]"
+                  checked={selectedOrderIdSet.has(order.id)}
+                  type="checkbox"
+                  onChange={() => toggleOrderSelection(order.id)}
+                />
+              </label>
               <div className="min-w-0">
                 <p className="truncate font-black text-black">#{order.id}</p>
                 <p className="mt-1 truncate text-xs font-medium text-black/50">{order.items.length} item{order.items.length === 1 ? "" : "s"}</p>
@@ -710,7 +1102,27 @@ export function DashboardAdminOrders() {
               <StatusPill value={order.paymentStatus} />
               <p className="font-black text-black">{formatMoney(order.total)}</p>
               <p className="text-xs font-bold text-black/45">{formatDate(order.createdAt)}</p>
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
+                <button
+                  aria-label={`Change status for order ${order.id}`}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 text-black/62 transition hover:text-[#f10606]"
+                  type="button"
+                  onClick={() => {
+                    setStatusEditorOrder(order);
+                    setStatusDraft(order.status);
+                  }}
+                >
+                  {busyAction === `status-${order.id}` ? <LoaderCircle className="animate-spin" size={15} /> : <PencilLine size={16} />}
+                </button>
+                <button
+                  aria-label={`Regenerate bank payment details for order ${order.id}`}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 text-black/62 transition hover:text-[#f10606]"
+                  disabled={busyAction === `payment-${order.id}`}
+                  type="button"
+                  onClick={() => void regenerateBankPaymentDetails(order)}
+                >
+                  {busyAction === `payment-${order.id}` ? <LoaderCircle className="animate-spin" size={15} /> : <CreditCard size={16} />}
+                </button>
                 <button
                   aria-label={`View order ${order.id}`}
                   className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 text-black/62 transition hover:text-[#f10606]"
@@ -771,13 +1183,56 @@ export function DashboardAdminOrders() {
                 <h2 className="mt-1 text-xl font-black text-black">#{selectedOrder.id}</h2>
                 <p className="mt-1 text-xs font-bold text-black/42">{formatDate(selectedOrder.createdAt)}</p>
               </div>
-              <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/55" type="button" onClick={() => setSelectedOrder(null)}>
-                <X size={18} />
-              </button>
+              <div className="flex shrink-0 items-center gap-2">
+                <button
+                  aria-label={`Change status for order ${selectedOrder.id}`}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 text-black/62 transition hover:text-[#f10606]"
+                  type="button"
+                  onClick={() => {
+                    setStatusEditorOrder(selectedOrder);
+                    setStatusDraft(selectedOrder.status);
+                  }}
+                >
+                  <PencilLine size={16} />
+                </button>
+                <button
+                  aria-label={`Regenerate bank payment details for order ${selectedOrder.id}`}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 text-black/62 transition hover:text-[#f10606]"
+                  disabled={busyAction === `payment-${selectedOrder.id}`}
+                  type="button"
+                  onClick={() => void regenerateBankPaymentDetails(selectedOrder)}
+                >
+                  {busyAction === `payment-${selectedOrder.id}` ? <LoaderCircle className="animate-spin" size={15} /> : <CreditCard size={16} />}
+                </button>
+                <button className="flex h-9 w-9 items-center justify-center rounded-full bg-black/[0.04] text-black/55" type="button" onClick={() => setSelectedOrder(null)}>
+                  <X size={18} />
+                </button>
+              </div>
             </header>
 
             <div className="mt-5 grid gap-3 md:grid-cols-4">
-              <DetailMetric label="Status" value={formatLabel(selectedOrder.status)} />
+              <div className="rounded-lg bg-white p-3">
+                <label className="text-[10px] font-black uppercase text-black/42" htmlFor="admin-order-status">
+                  Status
+                </label>
+                <select
+                  className="mt-1 h-10 w-full rounded-lg border border-black/10 bg-white px-3 text-sm font-black text-black outline-none transition focus:border-[#f10606]/40 disabled:cursor-not-allowed disabled:opacity-60"
+                  disabled={busyAction === `status-${selectedOrder.id}`}
+                  id="admin-order-status"
+                  value={selectedOrder.status}
+                  onChange={(event) => void updateOrderStatus(selectedOrder, event.target.value)}
+                >
+                  {editableOrderStatuses.map((item) => (
+                    <option key={item} value={item}>{formatLabel(item)}</option>
+                  ))}
+                </select>
+                {busyAction === `status-${selectedOrder.id}` ? (
+                  <p className="mt-2 flex items-center gap-1.5 text-[10px] font-black text-[#f10606]">
+                    <LoaderCircle className="animate-spin" size={12} />
+                    Updating
+                  </p>
+                ) : null}
+              </div>
               <DetailMetric label="Payment" value={formatLabel(selectedOrder.paymentStatus)} />
               <DetailMetric label="Subtotal" value={formatMoney(selectedOrder.subtotal)} />
               <DetailMetric label="Total" value={formatMoney(selectedOrder.total)} />
@@ -794,6 +1249,39 @@ export function DashboardAdminOrders() {
               <p className="mt-3 text-sm font-medium leading-6 text-black/62">
                 {selectedOrder.deliveryAddress || "No delivery address provided."}
               </p>
+            </section>
+
+            <section className="mt-5 rounded-xl border border-black/10 bg-white p-4">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-black text-black">Bank transfer details</h3>
+                <span className="rounded-full bg-[#fff0f0] px-3 py-1 text-[10px] font-black text-[#f10606]">
+                  Paystack
+                </span>
+              </div>
+              <div className="mt-3 space-y-3">
+                {selectedOrder.paystackBankTransferAccounts.length ? selectedOrder.paystackBankTransferAccounts.map((account) => (
+                  <article className="rounded-xl bg-[#fafafa] p-4" key={account.id}>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <DetailMetric label="Bank" value={account.bankName || "Not provided"} />
+                      <DetailMetric label="Account Name" value={account.accountName || "Not provided"} />
+                      <DetailMetric label="Account Number" value={account.accountNumber || "Not provided"} />
+                      <DetailMetric label="Amount" value={formatMoney(account.amount)} />
+                      <DetailMetric label="Status" value={formatLabel(account.status)} />
+                      <DetailMetric label="Expires" value={formatDate(account.accountExpiresAt)} />
+                    </div>
+                    {account.providerReference ? (
+                      <div className="mt-3 rounded-lg bg-white p-3">
+                        <p className="text-[10px] font-black uppercase text-black/42">Provider Reference</p>
+                        <p className="mt-1 break-all text-xs font-black text-black">{account.providerReference}</p>
+                      </div>
+                    ) : null}
+                  </article>
+                )) : (
+                  <p className="rounded-lg bg-[#fafafa] p-3 text-xs font-bold text-black/45">
+                    No bank transfer account has been returned for this order.
+                  </p>
+                )}
+              </div>
             </section>
 
             <section className="mt-5 rounded-xl border border-black/10 bg-white p-4">
@@ -818,6 +1306,116 @@ export function DashboardAdminOrders() {
                 <p className="mt-2 text-sm font-medium leading-6 text-black/62">{selectedOrder.note}</p>
               </section>
             ) : null}
+          </section>
+        </div>
+      ) : null}
+
+      {statusEditorOrder ? (
+        <div
+          className="fixed inset-0 z-[130] flex items-end justify-center bg-black/45 backdrop-blur-sm sm:items-center sm:p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setStatusEditorOrder(null);
+              setStatusDraft("");
+            }
+          }}
+        >
+          <section className="w-full max-w-md rounded-t-[1.25rem] bg-white p-5 shadow-2xl sm:rounded-[1.25rem]" role="dialog" aria-modal="true">
+            <header className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase text-[#f10606]">Change order status</p>
+                <h2 className="mt-1 text-lg font-black text-black">#{statusEditorOrder.id}</h2>
+                <p className="mt-1 text-xs font-bold text-black/45">
+                  Current status: {formatLabel(statusEditorOrder.status)}
+                </p>
+              </div>
+              <button
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/55"
+                type="button"
+                onClick={() => {
+                  setStatusEditorOrder(null);
+                  setStatusDraft("");
+                }}
+              >
+                <X size={18} />
+              </button>
+            </header>
+
+            <label className="mt-5 block">
+              <span className="text-xs font-black uppercase text-black/45">Order Status</span>
+              <select
+                className="mt-2 h-12 w-full rounded-lg border border-black/10 bg-white px-3 text-sm font-black text-black/70 outline-none focus:border-[#f10606]/40"
+                value={statusDraft}
+                onChange={(event) => setStatusDraft(event.target.value)}
+              >
+                {editableOrderStatuses.map((item) => (
+                  <option key={item} value={item}>{formatLabel(item)}</option>
+                ))}
+              </select>
+            </label>
+
+            <div className="mt-5 grid gap-2 sm:grid-cols-2">
+              <button
+                className="flex h-12 items-center justify-center gap-2 rounded-lg bg-[#f10606] text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={!statusDraft || statusDraft === statusEditorOrder.status || busyAction === `status-${statusEditorOrder.id}`}
+                type="button"
+                onClick={() => void updateOrderStatus(statusEditorOrder, statusDraft)}
+              >
+                {busyAction === `status-${statusEditorOrder.id}` ? <LoaderCircle className="animate-spin" size={16} /> : <PencilLine size={16} />}
+                Submit
+              </button>
+              <button
+                className="h-12 rounded-lg border border-black/10 text-sm font-black text-black/55 transition hover:text-[#f10606]"
+                type="button"
+                onClick={() => {
+                  setStatusEditorOrder(null);
+                  setStatusDraft("");
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {paymentRetryDetails ? (
+        <div
+          className="fixed inset-0 z-[130] flex items-end justify-center bg-black/45 backdrop-blur-sm sm:items-center sm:p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPaymentRetryDetails(null);
+          }}
+        >
+          <section className="w-full max-w-lg rounded-t-[1.25rem] bg-white p-5 shadow-2xl sm:rounded-[1.25rem]" role="dialog" aria-modal="true">
+            <header className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-black uppercase text-[#f10606]">New bank details</p>
+                <h2 className="mt-1 text-lg font-black text-black">#{paymentRetryDetails.orderId}</h2>
+                <p className="mt-1 text-xs font-bold text-black/45">An email has also been sent to the customer.</p>
+              </div>
+              <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/55" type="button" onClick={() => setPaymentRetryDetails(null)}>
+                <X size={18} />
+              </button>
+            </header>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <DetailMetric label="Bank" value={paymentRetryDetails.bankName || "Not provided"} />
+              <DetailMetric label="Account Name" value={paymentRetryDetails.accountName || "Not provided"} />
+              <DetailMetric label="Account Number" value={paymentRetryDetails.accountNumber || "Not provided"} />
+              <DetailMetric label="Amount" value={formatPaymentAmount(paymentRetryDetails.amount, paymentRetryDetails.currency)} />
+              <DetailMetric label="Status" value={formatLabel(paymentRetryDetails.status)} />
+              <DetailMetric label="Payment Action" value={paymentRetryDetails.paymentAction ? formatLabel(paymentRetryDetails.paymentAction) : "None"} />
+            </div>
+
+            <section className="mt-4 rounded-xl bg-[#fafafa] p-4">
+              <p className="text-[10px] font-black uppercase text-black/42">Reference</p>
+              <p className="mt-2 break-all text-sm font-black text-black">{paymentRetryDetails.reference}</p>
+              {paymentRetryDetails.displayText ? (
+                <p className="mt-3 text-sm font-medium leading-6 text-black/62">{paymentRetryDetails.displayText}</p>
+              ) : null}
+            </section>
           </section>
         </div>
       ) : null}
