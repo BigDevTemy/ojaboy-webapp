@@ -1,5 +1,5 @@
-export const API_BASE_URL = "http://localhost:5000/";
-//export const API_BASE_URL = "https://ojaboy-backend-1092974911193.us-central1.run.app/";
+//export const API_BASE_URL = "http://localhost:5000/";
+export const API_BASE_URL = "https://ojaboy-backend-1092974911193.us-central1.run.app/";
 
 export const LOGIN_URL = "auth/login";
 export const REGISTER_URL = "auth/register";
