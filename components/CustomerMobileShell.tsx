@@ -76,8 +76,8 @@ export function CustomerMobileShell({
     <main className="customer-app-background min-h-dvh bg-[#f3f3f3] text-black">
       <div className="customer-app-shell mx-auto min-h-dvh w-full bg-[#fbfbfb] shadow-[0_0_60px_rgba(0,0,0,0.08)]">
         {!isHome ? (
-          <header className="customer-app-safe-top sticky top-0 z-30 border-b border-black/[0.06] bg-white/95 px-4 pb-3 backdrop-blur-xl">
-            <div className="flex h-12 items-center justify-between gap-3">
+          <header className="customer-app-safe-top sticky top-0 z-30 border-b border-black/[0.06] bg-white/95 px-4 pb-3 backdrop-blur-xl sm:px-6 lg:px-8">
+            <div className="mx-auto flex h-12 w-full max-w-6xl items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-3">
                 <button
                   aria-label="Go back"
@@ -110,15 +110,15 @@ export function CustomerMobileShell({
         <div
           className={`customer-app-content ${
             isHome
-              ? "customer-app-safe-top px-4 pb-5"
+              ? "customer-app-safe-top mx-auto w-full max-w-6xl px-4 pb-5 sm:px-6 lg:px-8"
               : isAiAssistant
-                ? "p-0"
-                : "px-3 py-4"
+                ? "mx-auto w-full max-w-6xl p-0"
+                : "mx-auto w-full max-w-6xl px-3 py-4 sm:px-6 lg:px-8"
           } ${
             showNavigation
               ? isAiAssistant
-                ? "pb-[calc(4.75rem+env(safe-area-inset-bottom))]"
-                : "pb-28"
+                ? "pb-[calc(5rem+env(safe-area-inset-bottom))] sm:pb-[calc(5.5rem+env(safe-area-inset-bottom))]"
+                : "pb-28 sm:pb-32"
               : "customer-app-safe-bottom"
           }`}
         >
@@ -139,9 +139,9 @@ export function CustomerMobileShell({
             ) : null}
             <nav
               aria-label="Customer navigation"
-              className="customer-app-navigation fixed inset-x-0 bottom-0 z-40 mx-auto w-full max-w-[30rem] border-t border-black/[0.08] bg-white/96 px-2 pt-2 shadow-[0_-12px_30px_rgba(0,0,0,0.07)] backdrop-blur-xl"
+              className="customer-app-navigation fixed inset-x-0 bottom-0 z-40 mx-auto w-full border-t border-black/[0.08] bg-white/96 px-2 pt-2 shadow-[0_-12px_30px_rgba(0,0,0,0.07)] backdrop-blur-xl sm:px-4"
             >
-              <div className="grid grid-cols-5">
+              <div className="mx-auto grid w-full max-w-6xl grid-cols-5 gap-1">
                 {customerNavItems.map((item) => {
                   const isActive =
                     item.href === "/dashboard"
@@ -151,7 +151,7 @@ export function CustomerMobileShell({
                   return (
                     <Link
                       aria-current={isActive ? "page" : undefined}
-                      className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-2 text-[9px] font-black transition ${
+                      className={`flex min-w-0 flex-col items-center gap-1 rounded-xl px-1 py-2 text-[9px] font-black transition sm:text-[10px] md:text-xs ${
                         isActive
                           ? "text-[#f10606]"
                           : "text-black/42 active:bg-black/[0.04]"

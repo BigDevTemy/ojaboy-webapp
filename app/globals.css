@@ -132,7 +132,7 @@ button {
 }
 
 .customer-app-shell {
-  max-width: 30rem;
+  max-width: 100%;
 }
 
 .customer-app-safe-top {
@@ -150,13 +150,21 @@ button {
 .customer-mobile-agent,
 .customer-mobile-ai-link {
   right: 1rem;
-  bottom: calc(6.25rem + env(safe-area-inset-bottom));
+  bottom: calc(6rem + env(safe-area-inset-bottom));
 }
 
-@media (min-width: 30rem) {
+@media (min-width: 40rem) {
   .customer-mobile-agent,
   .customer-mobile-ai-link {
-    right: calc((100vw - 30rem) / 2 + 1rem);
+    right: 1.5rem;
+    bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  }
+}
+
+@media (min-width: 72rem) {
+  .customer-mobile-agent,
+  .customer-mobile-ai-link {
+    right: calc((100vw - 72rem) / 2 + 1.5rem);
   }
 }
 

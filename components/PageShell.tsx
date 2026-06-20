@@ -6,7 +6,7 @@ import Header from "./Header";
 export default function PageShell({ children }: { children: ReactNode }) {
   return (
     <main className="min-h-screen bg-white">
-      <Header />
+      {/* <Header /> */}
       <div className="pt-24">{children}</div>
       <Footer />
       <AgentChatWidget />

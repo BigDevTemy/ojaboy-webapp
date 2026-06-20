@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { CustomerMobileAiAssistant } from "@/components/CustomerMobileAiAssistant";
 import { CustomerMobileHome } from "@/components/CustomerMobileHome";
 import { CustomerMobileOrders } from "@/components/CustomerMobileOrders";
@@ -15,11 +15,29 @@ import { requiresDefaultAddress } from "@/lib/authSession";
 import { useAuthSession } from "@/lib/useAuthSession";
 
 export function DashboardShell({ children }: { children: React.ReactNode }) {
+  const hasMounted = useSyncExternalStore(
+    subscribeToClientHydration,
+    getClientHydrationSnapshot,
+    getServerHydrationSnapshot,
+  );
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const session = useAuthSession();
   const pathname = usePathname();
-  const isCustomer = session?.user.role?.toLowerCase() === "user";
+  const router = useRouter();
+  const role = session?.user.role?.trim().toLowerCase() ?? "";
+  const hasKnownRole = role.length > 0;
+  const isCustomer = role === "user";
+
+  useEffect(() => {
+    if (hasMounted && !session) {
+      router.replace("/login");
+    }
+  }, [hasMounted, router, session]);
+
+  if (!hasMounted || !session || !hasKnownRole) {
+    return <DashboardAccessCheck isRedirecting={hasMounted && !session} />;
+  }
 
   if (requiresDefaultAddress(session)) {
     const addressSetup = (
@@ -84,6 +102,36 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
           <div className="px-5 py-7 sm:px-8 lg:px-10">{children}</div>
         </section>
       </div>
+    </main>
+  );
+}
+
+function subscribeToClientHydration(listener: () => void) {
+  const timeoutId = window.setTimeout(listener, 0);
+
+  return () => window.clearTimeout(timeoutId);
+}
+
+function getClientHydrationSnapshot() {
+  return true;
+}
+
+function getServerHydrationSnapshot() {
+  return false;
+}
+
+function DashboardAccessCheck({ isRedirecting }: { isRedirecting: boolean }) {
+  return (
+    <main className="flex min-h-dvh items-center justify-center bg-[#fbfbfb] px-5 text-center text-black">
+      <section className="w-full max-w-sm rounded-xl border border-black/10 bg-white p-6 shadow-[0_18px_45px_rgba(0,0,0,0.06)]">
+        <div className="mx-auto h-10 w-10 animate-pulse rounded-full bg-[#fff0f0]" />
+        <p className="mt-4 text-sm font-black text-black">
+          {isRedirecting ? "Opening login..." : "Checking your account access..."}
+        </p>
+        <p className="mt-2 text-xs font-medium leading-5 text-black/50">
+          Please wait while we confirm your dashboard role.
+        </p>
+      </section>
     </main>
   );
 }

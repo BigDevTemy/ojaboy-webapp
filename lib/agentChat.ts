@@ -4,8 +4,9 @@ import {
 } from "@/lib/authClient";
 
 // https://ojaboy-ai-agent-1092974911193.us-central1.run.app/ask
+//http://localhost:8000
 const AGENT_ENDPOINT =
-  "http://localhost:8000/ask";
+  "https://ojaboy-ai-agent-1092974911193.us-central1.run.app/ask";
   
 const AGENT_SESSION_KEY = "ojaboy.agent.session-id";
 

@@ -824,14 +824,14 @@ export function DashboardCreateOrderModal({
         <div
           className={`fixed inset-0 z-[80] flex justify-center overflow-y-auto bg-black/45 ${
             isMobilePresentation
-              ? "items-stretch p-0"
+              ? "items-stretch p-0 sm:items-center sm:px-4 sm:py-6"
               : "items-start px-4 py-6 sm:items-center"
           }`}
         >
           <section
             className={`flex w-full max-w-3xl flex-col overflow-hidden bg-white shadow-[0_30px_90px_rgba(0,0,0,0.24)] ${
               isMobilePresentation
-                ? "min-h-dvh max-h-dvh max-w-[30rem] rounded-none"
+                ? "min-h-dvh max-h-dvh rounded-none sm:min-h-0 sm:max-h-[92vh] sm:rounded-2xl"
                 : "max-h-[92vh] rounded-2xl"
             }`}
           >

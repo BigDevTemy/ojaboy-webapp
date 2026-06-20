@@ -18,7 +18,12 @@ import {
 import { DashboardCreateOrderModal } from "@/components/DashboardCreateOrderModal";
 import { authenticatedFetch } from "@/lib/authClient";
 import { useAuthSession } from "@/lib/useAuthSession";
-import { API_BASE_URL, CURRENT_ORDER_URL, NOTIFICATIONS_URL } from "@/Serverurls";
+import {
+  API_BASE_URL,
+  CURRENT_ORDER_URL,
+  NOTIFICATIONS_URL,
+  ORDER_HISTORY_URL,
+} from "@/Serverurls";
 
 type MobileOrderItem = {
   id: string;
@@ -34,6 +39,7 @@ type MobileOrder = {
 };
 
 const currentOrderEndpoint = `${API_BASE_URL}${CURRENT_ORDER_URL}`;
+const orderHistoryEndpoint = `${API_BASE_URL}${ORDER_HISTORY_URL}`;
 const unreadNotificationsEndpoint = `${API_BASE_URL}${NOTIFICATIONS_URL}/unread-count`;
 
 const quickCategories = [
@@ -121,26 +127,67 @@ function parseOrder(value: unknown): MobileOrder | null {
   };
 }
 
-async function fetchRecentOrder() {
+function extractOrders(body: unknown) {
+  const responseValue = isRecord(body)
+    ? body.data ?? body.orders ?? body.results ?? body
+    : body;
+  const dataValue = isRecord(responseValue) && Array.isArray(responseValue.orders)
+    ? responseValue.orders
+    : responseValue;
+  const values = Array.isArray(dataValue) ? dataValue : [dataValue];
+
+  return values
+    .map(parseOrder)
+    .filter((order): order is MobileOrder => order !== null);
+}
+
+function sortRecentOrders(orders: MobileOrder[]) {
+  return [...orders].sort((firstOrder, secondOrder) => {
+    const firstTime = firstOrder.createdAt
+      ? new Date(firstOrder.createdAt).getTime()
+      : 0;
+    const secondTime = secondOrder.createdAt
+      ? new Date(secondOrder.createdAt).getTime()
+      : 0;
+
+    return secondTime - firstTime;
+  });
+}
+
+async function fetchRecentOrders() {
+  const url = new URL(orderHistoryEndpoint);
+  url.searchParams.set("page", "1");
+  url.searchParams.set("limit", "3");
+
+  const response = await authenticatedFetch(url.toString(), {
+    headers: { Accept: "application/json" },
+  });
+
+  if (response.status === 204 || response.status === 404) {
+    return [];
+  }
+
+  if (!response.ok) {
+    throw new Error(`Unable to load your recent orders (${response.status}).`);
+  }
+
+  return sortRecentOrders(extractOrders((await response.json()) as unknown)).slice(0, 3);
+}
+
+async function fetchCurrentOrders() {
   const response = await authenticatedFetch(currentOrderEndpoint, {
     headers: { Accept: "application/json" },
   });
 
   if (response.status === 204 || response.status === 404) {
-    return null;
+    return [];
   }
 
   if (!response.ok) {
-    throw new Error(`Unable to load your recent order (${response.status}).`);
+    return [];
   }
 
-  const body = (await response.json()) as unknown;
-  const responseValue = isRecord(body)
-    ? body.data ?? body.orders ?? body.results ?? body
-    : body;
-  const values = Array.isArray(responseValue) ? responseValue : [responseValue];
-
-  return values.map(parseOrder).find((order) => order !== null) ?? null;
+  return extractOrders((await response.json()) as unknown);
 }
 
 function formatMoney(value: number) {
@@ -177,7 +224,7 @@ function formatOrderDate(value?: string) {
 
 export function CustomerMobileHome() {
   const session = useAuthSession();
-  const [recentOrder, setRecentOrder] = useState<MobileOrder | null>(null);
+  const [recentOrders, setRecentOrders] = useState<MobileOrder[]>([]);
   const [isOrderLoading, setIsOrderLoading] = useState(true);
   const [orderError, setOrderError] = useState("");
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
@@ -187,10 +234,20 @@ export function CustomerMobileHome() {
     setOrderError("");
 
     try {
-      setRecentOrder(await fetchRecentOrder());
+      const [historyOrders, currentOrders] = await Promise.all([
+        fetchRecentOrders(),
+        fetchCurrentOrders(),
+      ]);
+      const uniqueOrders = new Map<string, MobileOrder>();
+
+      [...currentOrders, ...historyOrders].forEach((order) => {
+        uniqueOrders.set(order.id, order);
+      });
+
+      setRecentOrders(sortRecentOrders([...uniqueOrders.values()]).slice(0, 3));
     } catch (error) {
       setOrderError(
-        error instanceof Error ? error.message : "Unable to load your recent order.",
+        error instanceof Error ? error.message : "Unable to load your recent orders.",
       );
     } finally {
       setIsOrderLoading(false);
@@ -200,10 +257,16 @@ export function CustomerMobileHome() {
   useEffect(() => {
     let isCancelled = false;
 
-    void fetchRecentOrder()
-      .then((order) => {
+    void Promise.all([fetchRecentOrders(), fetchCurrentOrders()])
+      .then(([historyOrders, currentOrders]) => {
         if (!isCancelled) {
-          setRecentOrder(order);
+          const uniqueOrders = new Map<string, MobileOrder>();
+
+          [...currentOrders, ...historyOrders].forEach((order) => {
+            uniqueOrders.set(order.id, order);
+          });
+
+          setRecentOrders(sortRecentOrders([...uniqueOrders.values()]).slice(0, 3));
         }
       })
       .catch((error: unknown) => {
@@ -211,7 +274,7 @@ export function CustomerMobileHome() {
           setOrderError(
             error instanceof Error
               ? error.message
-              : "Unable to load your recent order.",
+              : "Unable to load your recent orders.",
           );
         }
       })
@@ -265,7 +328,6 @@ export function CustomerMobileHome() {
 
   const defaultAddress =
     session?.user.defaultAddress?.formattedAddress || "Your default delivery address";
-  const productNames = recentOrder?.items.map((item) => item.name) ?? [];
 
   return (
     <div className="space-y-6 pb-4">
@@ -301,10 +363,10 @@ export function CustomerMobileHome() {
         </h2>
       </section>
 
-      <section className="relative isolate overflow-hidden rounded-[1.4rem] bg-[#f10606] p-5 text-white shadow-[0_18px_38px_rgba(241,6,6,0.25)]">
+      <section className="relative isolate overflow-hidden rounded-[1.4rem] bg-[#f10606] p-5 text-white shadow-[0_18px_38px_rgba(241,6,6,0.25)] sm:p-6 lg:p-7">
         <div className="absolute -bottom-12 -right-10 h-44 w-44 rounded-full bg-white/10" />
         <div className="absolute right-0 top-0 h-full w-[48%] bg-[radial-gradient(circle_at_70%_45%,rgba(255,255,255,0.22),transparent_55%)]" />
-        <div className="relative z-10 max-w-[62%]">
+        <div className="relative z-10 max-w-[68%] sm:max-w-[28rem]">
           <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-xl bg-white/15">
             <ShoppingBasket size={19} />
           </div>
@@ -319,14 +381,15 @@ export function CustomerMobileHome() {
             />
           </div>
         </div>
-        <div className="pointer-events-none absolute bottom-0 right-1 h-36 w-36">
+        <div className="pointer-events-none absolute inset-y-0 right-0 w-[44%] max-w-64 overflow-hidden sm:w-[36%] lg:w-[32%]">
           <Image
-            alt=""
-            className="object-contain object-bottom"
+            alt="Ojaboy market shopper using the app"
+            className="object-cover object-center"
             fill
-            sizes="144px"
-            src="/products/tomatoes-basket.png"
+            sizes="(min-width: 1024px) 256px, (min-width: 640px) 36vw, 44vw"
+            src="/auth/signup-market-shopper.png"
           />
+          <div className="absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-[#f10606] to-transparent" />
         </div>
       </section>
 
@@ -337,23 +400,23 @@ export function CustomerMobileHome() {
             See all
           </Link>
         </div>
-        <div className="scrollbar-hide -mx-1 flex gap-3 overflow-x-auto px-1 pb-1">
+        <div className="scrollbar-hide -mx-1 flex gap-4 overflow-x-auto px-1 pb-1 sm:grid sm:grid-cols-5 sm:gap-4 sm:overflow-visible lg:gap-5">
           {quickCategories.map((category) => (
             <Link
-              className="w-[68px] shrink-0 text-center"
+              className="w-24 shrink-0 text-center sm:w-full"
               href="/dashboard/market-prices"
               key={category.label}
             >
-              <span className={`relative mx-auto flex h-14 w-14 overflow-hidden rounded-2xl ${category.tone}`}>
+              <span className={`relative mx-auto flex h-20 w-20 overflow-hidden rounded-2xl sm:h-24 sm:w-24 lg:h-28 lg:w-28 ${category.tone}`}>
                 <Image
                   alt=""
-                  className="object-contain p-2"
+                  className="object-contain p-3"
                   fill
-                  sizes="56px"
+                  sizes="(min-width: 1024px) 112px, (min-width: 640px) 96px, 80px"
                   src={category.image}
                 />
               </span>
-              <span className="mt-2 block truncate text-[10px] font-bold text-black/65">
+              <span className="mt-2 block truncate text-xs font-bold text-black/65">
                 {category.label}
               </span>
             </Link>
@@ -373,7 +436,7 @@ export function CustomerMobileHome() {
             See all
           </Link>
         </div>
-        <div className="grid grid-cols-3 gap-2.5">
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
           {marketWatch.map((item) => {
             const isUp = item.direction === "up";
             return (
@@ -425,36 +488,45 @@ export function CustomerMobileHome() {
               Try again
             </button>
           </div>
-        ) : recentOrder ? (
-          <Link
-            className="block rounded-2xl border border-black/10 bg-white p-4 shadow-[0_12px_28px_rgba(0,0,0,0.05)]"
-            href="/dashboard/orders"
-          >
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[10px] font-black uppercase text-black/40">
-                  Order #{recentOrder.id.slice(0, 8)}
-                </p>
-                <p className="mt-1 truncate text-sm font-black text-black">
-                  {productNames.length ? productNames.join(", ") : "Market order"}
-                </p>
-                <p className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-black/42">
-                  <Clock3 size={12} />
-                  {formatOrderDate(recentOrder.createdAt)}
-                </p>
-              </div>
-              <p className="shrink-0 text-sm font-black text-black">
-                {formatMoney(recentOrder.total)}
-              </p>
-            </div>
-            <div className="mt-4 flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2.5">
-              <span className="flex items-center gap-2 text-[10px] font-black text-emerald-700">
-                <PackageCheck size={14} />
-                {formatStatus(recentOrder.status)}
-              </span>
-              <ChevronRight className="text-emerald-700" size={15} />
-            </div>
-          </Link>
+        ) : recentOrders.length ? (
+          <div className="space-y-3">
+            {recentOrders.map((order) => {
+              const productNames = order.items.map((item) => item.name);
+
+              return (
+                <Link
+                  className="block rounded-2xl border border-black/10 bg-white p-4 shadow-[0_12px_28px_rgba(0,0,0,0.05)]"
+                  href="/dashboard/orders"
+                  key={order.id}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black uppercase text-black/40">
+                        Order #{order.id.slice(0, 8)}
+                      </p>
+                      <p className="mt-1 truncate text-sm font-black text-black">
+                        {productNames.length ? productNames.join(", ") : "Market order"}
+                      </p>
+                      <p className="mt-2 flex items-center gap-1.5 text-[10px] font-bold text-black/42">
+                        <Clock3 size={12} />
+                        {formatOrderDate(order.createdAt)}
+                      </p>
+                    </div>
+                    <p className="shrink-0 text-sm font-black text-black">
+                      {formatMoney(order.total)}
+                    </p>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between rounded-xl bg-emerald-50 px-3 py-2.5">
+                    <span className="flex items-center gap-2 text-[10px] font-black text-emerald-700">
+                      <PackageCheck size={14} />
+                      {formatStatus(order.status)}
+                    </span>
+                    <ChevronRight className="text-emerald-700" size={15} />
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
         ) : (
           <div className="rounded-2xl border border-dashed border-black/15 bg-white p-5 text-center">
             <Sparkles className="mx-auto text-[#f10606]" size={22} />
