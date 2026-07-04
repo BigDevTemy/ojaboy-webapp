@@ -58,6 +58,14 @@ type ProductOption = {
   availableUnits: string[];
 };
 
+type QuoteChoice = {
+  buyPriceId: string;
+  productOfferingId?: string;
+  label: string;
+  unit: string;
+  unitPrice: number;
+};
+
 type QuoteResponseItem = {
   original: string;
   status: string;
@@ -67,6 +75,7 @@ type QuoteResponseItem = {
     unit?: string;
   };
   availableUnits: string[];
+  choices: QuoteChoice[];
   buyPriceId?: string;
   unitPrice?: number;
   totalPrice?: number;
@@ -295,6 +304,21 @@ function parseWishlistQuote(value: unknown): WishlistQuote | null {
     const quantity = readNumber(interpretation, ["quantity"]) || readNumber(item, ["quantity"]);
     const unitPrice = readNumber(item, ["unitPrice"]);
     const totalPrice = readNumber(item, ["totalPrice"]);
+    const choices = Array.isArray(item.choices)
+      ? item.choices.flatMap((choice): QuoteChoice[] => {
+          if (!isRecord(choice)) return [];
+          const buyPriceId = readText(choice, ["buyPriceId"]);
+          if (!buyPriceId) return [];
+          const choiceUnitPrice = readNumber(choice, ["unitPrice"]);
+          return [{
+            buyPriceId,
+            productOfferingId: readText(choice, ["productOfferingId"]) || undefined,
+            label: readText(choice, ["label"]) || readText(choice, ["unit"]) || "Option",
+            unit: readText(choice, ["unit"]),
+            unitPrice: choiceUnitPrice || 0,
+          }];
+        })
+      : [];
 
     return [{
       original,
@@ -310,6 +334,7 @@ function parseWishlistQuote(value: unknown): WishlistQuote | null {
       availableUnits: Array.isArray(item.availableUnits)
         ? item.availableUnits.filter((unit): unit is string => typeof unit === "string")
         : [],
+      choices,
       buyPriceId: readText(item, ["buyPriceId"]) || undefined,
       unitPrice: unitPrice || undefined,
       totalPrice: totalPrice || undefined,
@@ -512,6 +537,7 @@ export function CustomerMobileWishlist() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [quotes, setQuotes] = useState<Record<string, WishlistQuote>>({});
+  const [choiceSelections, setChoiceSelections] = useState<Record<string, Record<number, string>>>({});
   const [orderResults, setOrderResults] = useState<Record<string, CreateOrderResult>>({});
   const [paymentVerifications, setPaymentVerifications] = useState<Record<string, PaymentVerification>>({});
   const [paymentVerificationErrors, setPaymentVerificationErrors] = useState<Record<string, string>>({});
@@ -522,6 +548,39 @@ export function CustomerMobileWishlist() {
   const [productSearchErrors, setProductSearchErrors] = useState<Record<string, string>>({});
   const searchTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
   const searchControllersRef = useRef<Record<string, AbortController>>({});
+
+  function getSelectedChoice(wishlistId: string, item: QuoteResponseItem, index: number) {
+    if (item.status !== "needs_confirmation" || !item.choices.length) {
+      return undefined;
+    }
+
+    const selectedBuyPriceId = choiceSelections[wishlistId]?.[index];
+    return item.choices.find((choice) => choice.buyPriceId === selectedBuyPriceId);
+  }
+
+  function isItemResolved(wishlistId: string, item: QuoteResponseItem, index: number) {
+    return item.status === "matched" || Boolean(getSelectedChoice(wishlistId, item, index));
+  }
+
+  function getEffectiveQuoteItems(wishlistId: string) {
+    const quote = quotes[wishlistId];
+
+    if (!quote) return [];
+
+    const resolvedSelections = quote.items.flatMap((item, index) => {
+      const choice = getSelectedChoice(wishlistId, item, index);
+      return choice
+        ? [{ buyPriceId: choice.buyPriceId, quantity: item.interpretation.quantity ?? 1 }]
+        : [];
+    });
+
+    return [...quote.quoteItems, ...resolvedSelections];
+  }
+
+  function getEffectiveCanProceed(wishlistId: string) {
+    const quote = quotes[wishlistId];
+    return Boolean(quote?.items.length) && (quote?.items.every((item, index) => isItemResolved(wishlistId, item, index)) ?? false);
+  }
 
   const loadWishlists = useCallback(async () => {
     setIsLoading(true);
@@ -779,6 +838,7 @@ export function CustomerMobileWishlist() {
       }
 
       setQuotes((current) => ({ ...current, [id]: quote }));
+      setChoiceSelections((current) => ({ ...current, [id]: {} }));
       setNotice("Wishlist quote generated.");
     } catch (requestError) {
       setError(
@@ -790,9 +850,9 @@ export function CustomerMobileWishlist() {
   }
 
   async function orderWishlistQuote(id: string) {
-    const quote = quotes[id];
+    const effectiveQuoteItems = getEffectiveQuoteItems(id);
 
-    if (!quote?.canProceed || !quote.quoteItems.length) {
+    if (!getEffectiveCanProceed(id) || !effectiveQuoteItems.length) {
       return;
     }
 
@@ -818,7 +878,7 @@ export function CustomerMobileWishlist() {
           Accept: "application/json",
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ items: quote.quoteItems }),
+        body: JSON.stringify({ items: effectiveQuoteItems }),
       });
       const body = (await response.json().catch(() => null)) as unknown;
 

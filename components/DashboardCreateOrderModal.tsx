@@ -15,6 +15,7 @@ import {
   Send,
   ShoppingCart,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
 import { authenticatedFetch } from "@/lib/authClient";
@@ -27,7 +28,15 @@ import {
   VERIFY_PAYMENT_URL,
 } from "@/Serverurls";
 
-type QuoteItemStatus = "matched" | "unsupported_unit" | "invalid_quantity" | string;
+type QuoteItemStatus = "matched" | "needs_confirmation" | "unsupported_unit" | "invalid_quantity" | string;
+
+type QuoteChoice = {
+  buyPriceId: string;
+  productOfferingId?: string;
+  label: string;
+  unit: string;
+  unitPrice: number;
+};
 
 type QuoteResponseItem = {
   original: string;
@@ -36,28 +45,36 @@ type QuoteResponseItem = {
     product?: string;
     quantity?: number;
     unit?: string;
+    amount?: number;
   };
   availableUnits: string[];
+  choices: QuoteChoice[];
+  productId?: string;
   buyPriceId?: string;
   unitPrice?: number;
   totalPrice?: number;
   message: string;
 };
 
+type QuoteLineItem =
+  | { buyPriceId: string; quantity: number }
+  | { productId: string; amount: number };
+
 type OrderQuote = {
   message: string;
   canProceed: boolean;
   items: QuoteResponseItem[];
-  quoteItems: {
-    buyPriceId: string;
-    quantity: number;
-  }[];
+  quoteItems: QuoteLineItem[];
   summary: {
     received: number;
     matched: number;
     requiresAttention: number;
   };
 };
+
+function isMatchedStatus(status: QuoteItemStatus) {
+  return status === "matched" || status.startsWith("matched_");
+}
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -144,6 +161,7 @@ type PaymentVerification = {
 };
 
 const quoteEndpoint = `${API_BASE_URL}${ORDERS_QUOTE_URL}`;
+const resolveQuoteItemEndpoint = `${quoteEndpoint}/resolve-item`;
 const createOrderEndpoint = `${API_BASE_URL}${CREATE_ORDER_URL}`;
 const verifyPaymentEndpoint = `${API_BASE_URL}${VERIFY_PAYMENT_URL}`;
 const exampleOrder = "1/2 basket garri, 2 derica rice";
@@ -167,46 +185,83 @@ function readString(record: UnknownRecord, keys: string[]) {
   return "";
 }
 
+function parseQuoteItem(value: unknown): QuoteResponseItem | null {
+  if (!isRecord(value) || typeof value.original !== "string" || typeof value.status !== "string") {
+    return null;
+  }
+
+  const interpretation = isRecord(value.interpretation) ? value.interpretation : {};
+  const quantity = Number(interpretation.quantity);
+  const amount = Number(interpretation.amount ?? value.amount);
+  const unitPrice = Number(value.unitPrice);
+  const totalPrice = Number(value.totalPrice);
+
+  const choices = Array.isArray(value.choices)
+    ? value.choices.flatMap((choice): QuoteChoice[] => {
+        if (!isRecord(choice) || typeof choice.buyPriceId !== "string") {
+          return [];
+        }
+
+        const choiceUnitPrice = Number(choice.unitPrice);
+
+        return [{
+          buyPriceId: choice.buyPriceId,
+          productOfferingId:
+            typeof choice.productOfferingId === "string" ? choice.productOfferingId : undefined,
+          label: readString(choice, ["label"]) || readString(choice, ["unit"]) || "Option",
+          unit: readString(choice, ["unit"]),
+          unitPrice: Number.isFinite(choiceUnitPrice) ? choiceUnitPrice : 0,
+        }];
+      })
+    : [];
+
+  return {
+    original: value.original,
+    status: value.status,
+    interpretation: {
+      product: readString(interpretation, ["product"]) || undefined,
+      quantity: Number.isFinite(quantity) ? quantity : undefined,
+      unit: readString(interpretation, ["unit"]) || undefined,
+      amount: Number.isFinite(amount) ? amount : undefined,
+    },
+    availableUnits: Array.isArray(value.availableUnits)
+      ? value.availableUnits.filter((unit): unit is string => typeof unit === "string")
+      : [],
+    choices,
+    productId: typeof value.productId === "string" ? value.productId : undefined,
+    buyPriceId: typeof value.buyPriceId === "string" ? value.buyPriceId : undefined,
+    unitPrice: Number.isFinite(unitPrice) ? unitPrice : undefined,
+    totalPrice: Number.isFinite(totalPrice) ? totalPrice : undefined,
+    message: typeof value.message === "string" ? value.message : "",
+  };
+}
+
 function parseQuoteResponse(value: unknown): OrderQuote | null {
   if (!isRecord(value) || !Array.isArray(value.items) || !Array.isArray(value.quoteItems)) {
     return null;
   }
 
   const items = value.items.flatMap((item): QuoteResponseItem[] => {
-    if (!isRecord(item) || typeof item.original !== "string" || typeof item.status !== "string") {
-      return [];
-    }
-
-    const interpretation = isRecord(item.interpretation) ? item.interpretation : {};
-    const quantity = Number(interpretation.quantity);
-    const unitPrice = Number(item.unitPrice);
-    const totalPrice = Number(item.totalPrice);
-
-    return [{
-      original: item.original,
-      status: item.status,
-      interpretation: {
-        product: readString(interpretation, ["product"]) || undefined,
-        quantity: Number.isFinite(quantity) ? quantity : undefined,
-        unit: readString(interpretation, ["unit"]) || undefined,
-      },
-      availableUnits: Array.isArray(item.availableUnits)
-        ? item.availableUnits.filter((unit): unit is string => typeof unit === "string")
-        : [],
-      buyPriceId: typeof item.buyPriceId === "string" ? item.buyPriceId : undefined,
-      unitPrice: Number.isFinite(unitPrice) ? unitPrice : undefined,
-      totalPrice: Number.isFinite(totalPrice) ? totalPrice : undefined,
-      message: typeof item.message === "string" ? item.message : "",
-    }];
+    const parsed = parseQuoteItem(item);
+    return parsed ? [parsed] : [];
   });
 
   const quoteItems = value.quoteItems.flatMap((item): OrderQuote["quoteItems"] => {
-    if (!isRecord(item) || typeof item.buyPriceId !== "string") {
+    if (!isRecord(item)) {
       return [];
     }
 
-    const quantity = Number(item.quantity);
-    return Number.isFinite(quantity) ? [{ buyPriceId: item.buyPriceId, quantity }] : [];
+    if (typeof item.buyPriceId === "string") {
+      const quantity = Number(item.quantity);
+      return Number.isFinite(quantity) ? [{ buyPriceId: item.buyPriceId, quantity }] : [];
+    }
+
+    if (typeof item.productId === "string") {
+      const amount = Number(item.amount);
+      return Number.isFinite(amount) ? [{ productId: item.productId, amount }] : [];
+    }
+
+    return [];
   });
   const summary = isRecord(value.summary) ? value.summary : {};
 
@@ -217,10 +272,10 @@ function parseQuoteResponse(value: unknown): OrderQuote | null {
     quoteItems,
     summary: {
       received: Number(summary.received) || items.length,
-      matched: Number(summary.matched) || items.filter((item) => item.status === "matched").length,
+      matched: Number(summary.matched) || items.filter((item) => isMatchedStatus(item.status)).length,
       requiresAttention:
         Number(summary.requiresAttention) ||
-        items.filter((item) => item.status !== "matched").length,
+        items.filter((item) => !isMatchedStatus(item.status)).length,
     },
   };
 }
@@ -401,6 +456,9 @@ export function DashboardCreateOrderModal({
   const [quote, setQuote] = useState<OrderQuote | null>(null);
   const [quoteError, setQuoteError] = useState("");
   const [isQuoting, setIsQuoting] = useState(false);
+  const [removedItemIndexes, setRemovedItemIndexes] = useState<Set<number>>(new Set());
+  const [resolvingIndex, setResolvingIndex] = useState<number | null>(null);
+  const [resolveErrors, setResolveErrors] = useState<Record<number, string>>({});
   const [googlePlacesLibrary, setGooglePlacesLibrary] =
     useState<GooglePlacesLibrary | null>(null);
   const [googlePlacesStatus, setGooglePlacesStatus] = useState<
@@ -427,9 +485,118 @@ export function DashboardCreateOrderModal({
     null,
   );
   const googleRequestIdRef = useRef(0);
+
+  function isItemResolved(item: QuoteResponseItem) {
+    return isMatchedStatus(item.status);
+  }
+
+  function buildOriginalWithUnit(item: QuoteResponseItem, unit: string) {
+    const quantity = item.interpretation.quantity;
+    const product = item.interpretation.product;
+
+    if (quantity !== undefined && product) {
+      return `${quantity} ${unit} ${product}`;
+    }
+
+    if (item.interpretation.unit) {
+      return item.original.replace(item.interpretation.unit, unit);
+    }
+
+    return `${item.original} (${unit})`;
+  }
+
+  async function resolveItem(
+    index: number,
+    payload: { buyPriceId?: string; quantity?: number; original: string },
+  ) {
+    if (!quote) return;
+
+    setResolvingIndex(index);
+    setResolveErrors((current) => ({ ...current, [index]: "" }));
+
+    try {
+      const response = await authenticatedFetch(resolveQuoteItemEndpoint, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        throw new Error(
+          await getApiErrorMessage(response, `Unable to resolve this item (${response.status}).`),
+        );
+      }
+
+      const resolved = parseQuoteItem((await response.json()) as unknown);
+
+      if (!resolved) {
+        throw new Error("The resolved item response was not in the expected format.");
+      }
+
+      setQuote((current) => {
+        if (!current) return current;
+
+        const nextItems = current.items.map((existing, itemIndex) =>
+          itemIndex === index ? resolved : existing,
+        );
+        const nextQuoteItems = resolved.buyPriceId
+          ? [
+              ...current.quoteItems.filter(
+                (quoteItem) => !("buyPriceId" in quoteItem && quoteItem.buyPriceId === resolved.buyPriceId),
+              ),
+              { buyPriceId: resolved.buyPriceId, quantity: resolved.interpretation.quantity ?? payload.quantity ?? 1 },
+            ]
+          : current.quoteItems;
+
+        return { ...current, items: nextItems, quoteItems: nextQuoteItems };
+      });
+    } catch (error) {
+      setResolveErrors((current) => ({
+        ...current,
+        [index]: error instanceof Error ? error.message : "Unable to resolve this item.",
+      }));
+    } finally {
+      setResolvingIndex(null);
+    }
+  }
+
+  const activeItems = useMemo(
+    () =>
+      (quote?.items ?? [])
+        .map((item, index) => ({ item, index }))
+        .filter(({ index }) => !removedItemIndexes.has(index)),
+    [quote, removedItemIndexes],
+  );
+
+  const effectiveCanProceed = useMemo(
+    () => activeItems.length > 0 && activeItems.every(({ item }) => isItemResolved(item)),
+    [activeItems],
+  );
+
+  const effectiveQuoteItems = useMemo(() => {
+    if (!quote) return [];
+
+    const removedBuyPriceIds = new Set(
+      quote.items.flatMap((item, index) =>
+        removedItemIndexes.has(index) && item.buyPriceId ? [item.buyPriceId] : [],
+      ),
+    );
+    const removedProductIds = new Set(
+      quote.items.flatMap((item, index) =>
+        removedItemIndexes.has(index) && item.productId ? [item.productId] : [],
+      ),
+    );
+
+    return quote.quoteItems.filter((quoteItem) =>
+      "buyPriceId" in quoteItem
+        ? !removedBuyPriceIds.has(quoteItem.buyPriceId)
+        : !removedProductIds.has(quoteItem.productId),
+    );
+  }, [quote, removedItemIndexes]);
+
   const subtotal = useMemo(
-    () => quote?.items.reduce((sum, item) => sum + (item.totalPrice ?? 0), 0) ?? 0,
-    [quote],
+    () => activeItems.reduce((sum, { item }) => sum + (item.totalPrice ?? 0), 0),
+    [activeItems],
   );
   const serviceFee =
     subtotal > 0 ? Math.max(MINIMUM_SERVICE_FEE, subtotal * SERVICE_FEE_RATE) : 0;
@@ -446,6 +613,9 @@ export function DashboardCreateOrderModal({
     setQuote(null);
     setQuoteError("");
     setOrderNote("");
+    setRemovedItemIndexes(new Set());
+    setResolvingIndex(null);
+    setResolveErrors({});
     setAddressSearchValue("");
     setAddressSuggestions([]);
     setAlternateDeliveryAddress(null);
@@ -646,6 +816,9 @@ export function DashboardCreateOrderModal({
       }
 
       setQuote(nextQuote);
+      setRemovedItemIndexes(new Set());
+      setResolvingIndex(null);
+      setResolveErrors({});
       setStep("review");
     } catch (error) {
       setQuoteError(error instanceof Error ? error.message : "Unable to quote this order.");
@@ -655,7 +828,7 @@ export function DashboardCreateOrderModal({
   }
 
   async function submitOrder() {
-    if (!quote?.canProceed || !quote.quoteItems.length) {
+    if (!quote || !effectiveCanProceed || !effectiveQuoteItems.length) {
       return;
     }
 
@@ -680,7 +853,7 @@ export function DashboardCreateOrderModal({
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          items: quote.quoteItems,
+          items: effectiveQuoteItems,
           ...(couponCode.trim() ? { couponCode: couponCode.trim() } : {}),
           ...(alternateDeliveryAddress
             ? { deliveryAddress: alternateDeliveryAddress }
@@ -964,18 +1137,27 @@ export function DashboardCreateOrderModal({
 
             {step === "review" && quote ? (
               <div className="min-h-0 flex-1 overflow-y-auto p-5">
-                <div className={`mb-4 flex gap-3 rounded-xl border p-4 ${quote.canProceed ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
-                  {quote.canProceed ? (
+                <div className={`mb-4 flex gap-3 rounded-xl border p-4 ${effectiveCanProceed ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+                  {effectiveCanProceed ? (
                     <CheckCircle2 className="mt-0.5 shrink-0 text-emerald-700" size={19} />
                   ) : (
                     <AlertCircle className="mt-0.5 shrink-0 text-amber-700" size={19} />
                   )}
                   <div>
-                    <p className="text-sm font-black text-black">{quote.message}</p>
+                    <p className="text-sm font-black text-black">
+                      {activeItems.length === 0
+                        ? "All items were removed. There is nothing left to submit."
+                        : effectiveCanProceed
+                          ? "All items are ready to order."
+                          : quote.message}
+                    </p>
                     <p className="mt-1 text-xs font-bold text-black/55">
-                      {quote.summary.matched} of {quote.summary.received} items matched
-                      {quote.summary.requiresAttention
-                        ? `, ${quote.summary.requiresAttention} require attention`
+                      {activeItems.filter(({ item }) => isItemResolved(item)).length} of {activeItems.length} items ready
+                      {activeItems.some(({ item }) => !isItemResolved(item))
+                        ? `, ${activeItems.filter(({ item }) => !isItemResolved(item)).length} require attention`
+                        : ""}
+                      {removedItemIndexes.size
+                        ? ` — ${removedItemIndexes.size} removed`
                         : ""}
                     </p>
                   </div>
@@ -1026,10 +1208,13 @@ export function DashboardCreateOrderModal({
                 ) : null}
 
                 <div className="space-y-3">
-                  {quote.items.map((item, index) => {
-                    const isMatched = item.status === "matched";
+                  {activeItems.map(({ item, index }) => {
+                    const isMatched = isMatchedStatus(item.status);
+                    const resolved = isItemResolved(item);
+                    const isResolving = resolvingIndex === index;
+                    const resolveError = resolveErrors[index];
                     return (
-                      <article className={`rounded-xl border p-4 ${isMatched ? "border-emerald-200" : "border-red-200 bg-red-50/45"}`} key={`${item.original}-${index}`}>
+                      <article className={`rounded-xl border p-4 ${resolved ? "border-emerald-200" : "border-red-200 bg-red-50/45"}`} key={`${item.original}-${index}`}>
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-black text-black">
@@ -1037,16 +1222,32 @@ export function DashboardCreateOrderModal({
                             </p>
                             <p className="mt-1 text-xs font-medium text-black/45">From: {item.original}</p>
                           </div>
-                          <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${isMatched ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
-                            {item.status.replaceAll("_", " ")}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase ${resolved ? "bg-emerald-100 text-emerald-700" : "bg-red-100 text-red-700"}`}>
+                              {isMatched ? "matched" : item.status.replaceAll("_", " ")}
+                            </span>
+                            <button
+                              aria-label={`Remove ${item.interpretation.product || item.original}`}
+                              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-black/40 transition hover:bg-red-50 hover:text-red-600"
+                              type="button"
+                              onClick={() =>
+                                setRemovedItemIndexes((current) => new Set(current).add(index))
+                              }
+                            >
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
                         </div>
 
                         <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
                           <div>
                             <p className="text-[10px] font-black uppercase text-black/40">Quantity</p>
                             <p className="mt-1 font-black text-black">
-                              {item.interpretation.quantity ?? "-"} {item.interpretation.unit ?? ""}
+                              {item.interpretation.quantity !== undefined
+                                ? `${item.interpretation.quantity} ${item.interpretation.unit ?? ""}`
+                                : item.interpretation.amount !== undefined
+                                  ? `${formatCurrency(item.interpretation.amount)} worth`
+                                  : "-"}
                             </p>
                           </div>
                           <div>
@@ -1063,18 +1264,70 @@ export function DashboardCreateOrderModal({
                           </div>
                         </div>
 
-                        <p className={`mt-3 text-sm font-medium leading-6 ${isMatched ? "text-black/60" : "text-red-700"}`}>
+                        <p className={`mt-3 text-sm font-medium leading-6 ${resolved ? "text-black/60" : "text-red-700"}`}>
                           {item.message}
                         </p>
-                        {item.availableUnits.length ? (
-                          <p className="mt-2 text-xs font-bold text-black/50">
-                            Available units: {item.availableUnits.join(", ")}
-                          </p>
-                        ) : null}
                         {item.buyPriceId ? (
                           <p className="mt-2 break-all text-[10px] font-bold text-black/35">
                             Buy price: {item.buyPriceId}
                           </p>
+                        ) : null}
+                        {resolveError ? (
+                          <p className="mt-2 text-xs font-bold text-red-700">{resolveError}</p>
+                        ) : null}
+
+                        {(item.status === "needs_confirmation" || item.status === "unsupported_unit") && item.choices.length ? (
+                          <div className="mt-3 space-y-2">
+                            <p className="text-[10px] font-black uppercase text-black/40">Choose an option</p>
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              {item.choices.map((choice) => (
+                                <button
+                                  className="flex items-center justify-between gap-2 rounded-lg border border-black/10 bg-white p-3 text-left transition hover:border-[#f10606]/40 disabled:cursor-not-allowed disabled:opacity-60"
+                                  disabled={isResolving}
+                                  key={choice.buyPriceId}
+                                  type="button"
+                                  onClick={() =>
+                                    void resolveItem(index, {
+                                      buyPriceId: choice.buyPriceId,
+                                      quantity: item.interpretation.quantity ?? 1,
+                                      original: item.original,
+                                    })
+                                  }
+                                >
+                                  <span>
+                                    <p className="text-xs font-black text-black">{choice.label}</p>
+                                    <p className="mt-1 text-xs font-bold text-black/55">{formatCurrency(choice.unitPrice)} / {choice.unit}</p>
+                                  </span>
+                                  {isResolving ? <Loader2 className="shrink-0 animate-spin" size={15} /> : null}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {item.status === "unsupported_unit" && !item.choices.length && item.availableUnits.length ? (
+                          <div className="mt-3 space-y-2">
+                            <p className="text-[10px] font-black uppercase text-black/40">Choose an available unit</p>
+                            <div className="flex flex-wrap gap-2">
+                              {item.availableUnits.map((unit) => (
+                                <button
+                                  className="flex items-center gap-2 rounded-lg border border-black/10 bg-white px-3 py-2 text-xs font-black text-black transition hover:border-[#f10606]/40 disabled:cursor-not-allowed disabled:opacity-60"
+                                  disabled={isResolving}
+                                  key={unit}
+                                  type="button"
+                                  onClick={() =>
+                                    void resolveItem(index, {
+                                      quantity: item.interpretation.quantity,
+                                      original: buildOriginalWithUnit(item, unit),
+                                    })
+                                  }
+                                >
+                                  {unit}
+                                  {isResolving ? <Loader2 className="animate-spin" size={13} /> : null}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                         ) : null}
                       </article>
                     );
@@ -1083,8 +1336,8 @@ export function DashboardCreateOrderModal({
 
                 <div className="mt-4 grid gap-3 rounded-xl bg-[#fbfbfb] p-4 sm:grid-cols-2 lg:grid-cols-4">
                   <div>
-                    <p className="text-xs font-black uppercase text-black/42">Matched items</p>
-                    <p className="mt-1 text-lg font-black text-black">{quote.quoteItems.length}</p>
+                    <p className="text-xs font-black uppercase text-black/42">Ready items</p>
+                    <p className="mt-1 text-lg font-black text-black">{effectiveQuoteItems.length}</p>
                   </div>
                   <div>
                     <p className="text-xs font-black uppercase text-black/42">Subtotal</p>
@@ -1137,7 +1390,7 @@ export function DashboardCreateOrderModal({
                   <button
                     className="flex h-11 items-center justify-center gap-2 rounded-lg bg-[#f10606] px-5 text-sm font-black text-white shadow-[0_12px_24px_rgba(241,6,6,0.2)] disabled:cursor-not-allowed disabled:opacity-45"
                     type="button"
-                    disabled={!quote.canProceed || isSubmittingOrder}
+                    disabled={!effectiveCanProceed || isSubmittingOrder}
                     onClick={() => void submitOrder()}
                   >
                     {isSubmittingOrder ? (

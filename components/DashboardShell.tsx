@@ -39,7 +39,7 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
     return <DashboardAccessCheck isRedirecting={hasMounted && !session} />;
   }
 
-  if (requiresDefaultAddress(session)) {
+  if (isCustomer && requiresDefaultAddress(session)) {
     const addressSetup = (
       <div className="mx-auto max-w-4xl">
         <DashboardAddresses forceAddAddress />

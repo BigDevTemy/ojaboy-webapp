@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
@@ -37,6 +38,10 @@ type MarketPrice = {
   id: string;
   productId: string;
   productName: string;
+  productOfferingId?: string;
+  offeringSku?: string;
+  variantName?: string;
+  brandName?: string;
   marketId: string;
   marketName: string;
   marketAddress?: string;
@@ -65,8 +70,25 @@ type MarketPriceForm = {
   observedAt: string;
   notes: string;
 };
+type BulkUploadResult = {
+  valid?: boolean;
+  message: string;
+  summary: Record<string, number>;
+  errors: string[];
+  preview: Array<{
+    row?: number;
+    productOfferingSku: string;
+    marketName: string;
+    amount?: number;
+    unit: string;
+    observedAt?: string;
+  }>;
+};
 
 const marketPricesEndpoint = `${API_BASE_URL}${MARKET_PRICES_URL}`;
+const marketPriceBulkUploadTemplateEndpoint = `${marketPricesEndpoint}/bulk-upload/template`;
+const marketPriceBulkUploadValidateEndpoint = `${marketPricesEndpoint}/bulk-upload/validate`;
+const marketPriceBulkUploadCommitEndpoint = `${marketPricesEndpoint}/bulk-upload/commit`;
 const marketsEndpoint = `${API_BASE_URL}${MARKETS_URL}`;
 const productsEndpoint = `${API_BASE_URL}${PRODUCTS_URL}`;
 
@@ -175,6 +197,10 @@ function parseMarketPrice(value: unknown): MarketPrice | null {
   const id = readText(value, ["id"]);
   const product = isRecord(value.product) ? value.product : null;
   const market = isRecord(value.market) ? value.market : null;
+  const offering = isRecord(value.productOffering) ? value.productOffering : null;
+  const priceUnit = isRecord(value.priceUnit) ? value.priceUnit : null;
+  const variant = offering && isRecord(offering.variant) ? offering.variant : null;
+  const brand = offering && isRecord(offering.brand) ? offering.brand : null;
   const productId = readText(value, ["productId"]) || (product ? readText(product, ["id"]) : "");
   const marketId = readText(value, ["marketId"]) || (market ? readText(market, ["id"]) : "");
   const amount = readNumber(value, ["amount", "currentPrice", "price"]);
@@ -190,6 +216,13 @@ function parseMarketPrice(value: unknown): MarketPrice | null {
       (product ? readText(product, ["name", "title"]) : "") ||
       readText(value, ["productName"]) ||
       "Product",
+    productOfferingId:
+      readText(value, ["productOfferingId"]) ||
+      (offering ? readText(offering, ["id"]) : "") ||
+      undefined,
+    offeringSku: offering ? readText(offering, ["sku"]) || undefined : undefined,
+    variantName: variant ? readText(variant, ["name"]) || undefined : undefined,
+    brandName: brand ? readText(brand, ["name"]) || undefined : undefined,
     marketId,
     marketName:
       (market ? readText(market, ["marketname", "name"]) : "") ||
@@ -201,7 +234,10 @@ function parseMarketPrice(value: unknown): MarketPrice | null {
       undefined,
     amount,
     currency: readText(value, ["currency"]) || "NGN",
-    unit: readText(value, ["unit"]) || "unit",
+    unit:
+      readText(value, ["unit"]) ||
+      (priceUnit ? readText(priceUnit, ["label", "code"]) : "") ||
+      "unit",
     quantity: readNumber(value, ["quantity"]) ?? 1,
     qualityGrade: readText(value, ["qualityGrade", "quality_grade"]) || undefined,
     source: readText(value, ["source"]) || undefined,
@@ -246,6 +282,86 @@ function formatDate(value?: string) {
   }).format(date);
 }
 
+function formatLabel(value: string) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function parseBulkUploadResult(value: unknown): BulkUploadResult | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const payload = isRecord(value.data) ? value.data : value;
+  const summary = isRecord(payload.summary) ? payload.summary : payload;
+  const rawErrors = Array.isArray(payload.errors)
+    ? payload.errors
+    : Array.isArray(value.errors)
+      ? value.errors
+      : [];
+  const rawPreview = Array.isArray(payload.preview)
+    ? payload.preview
+    : Array.isArray(value.preview)
+      ? value.preview
+      : [];
+  const parsedSummary = Object.fromEntries(
+    Object.entries(summary).flatMap(([key, item]) => {
+      const parsed = Number(item);
+      return Number.isFinite(parsed) ? [[key, parsed]] : [];
+    }),
+  );
+
+  return {
+    valid:
+      typeof payload.valid === "boolean"
+        ? payload.valid
+        : typeof value.valid === "boolean"
+          ? value.valid
+          : undefined,
+    message:
+      readText(payload, ["message"]) ||
+      readText(value, ["message"]) ||
+      "Market price bulk upload processed.",
+    summary: Object.keys(parsedSummary).length
+      ? parsedSummary
+      : {
+          received: readNumber(summary, ["received", "receivedRows", "total", "totalRows"]) ?? 0,
+          failed: readNumber(summary, ["failed", "invalid", "invalidRows"]) ?? rawErrors.length,
+        },
+    errors: rawErrors.flatMap((item): string[] => {
+      if (typeof item === "string") {
+        return [item];
+      }
+
+      if (isRecord(item)) {
+        const row = readText(item, ["row", "rowNumber", "line"]);
+        const field = readText(item, ["field", "column"]);
+        const message = readText(item, ["message", "error", "reason"]) || JSON.stringify(item);
+        const location = [row ? `Row ${row}` : "", field].filter(Boolean).join(", ");
+        return [`${location ? `${location}: ` : ""}${message}`];
+      }
+
+      return [];
+    }),
+    preview: rawPreview.flatMap((item): BulkUploadResult["preview"] => {
+      if (!isRecord(item)) {
+        return [];
+      }
+
+      return [{
+        row: readNumber(item, ["row", "rowNumber", "line"]),
+        productOfferingSku: readText(item, ["productOfferingSku", "sku", "offeringSku"]) || "-",
+        marketName: readText(item, ["marketName", "market"]) || "-",
+        amount: readNumber(item, ["amount", "price"]),
+        unit: readText(item, ["unit"]) || "-",
+        observedAt: readText(item, ["observedAt", "observed_at"]) || undefined,
+      }];
+    }),
+  };
+}
+
 function toPayload(form: MarketPriceForm) {
   return {
     productId: form.productId.trim(),
@@ -274,8 +390,13 @@ export function DashboardMarketPrices() {
   const [editingId, setEditingId] = useState("");
   const [selectedPrice, setSelectedPrice] = useState<MarketPrice | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [isBulkOpen, setIsBulkOpen] = useState(false);
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [bulkResult, setBulkResult] = useState<BulkUploadResult | null>(null);
+  const [bulkStage, setBulkStage] = useState<"idle" | "validating" | "validated" | "committing" | "committed">("idle");
   const [isLoading, setIsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -606,6 +727,120 @@ export function DashboardMarketPrices() {
     }
   }
 
+  async function downloadTemplate() {
+    setError("");
+
+    try {
+      const response = await authenticatedFetch(marketPriceBulkUploadTemplateEndpoint, {
+        headers: { Accept: "text/csv,application/octet-stream,*/*" },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Unable to download template (${response.status}).`);
+      }
+
+      const blob = await response.blob();
+      const disposition = response.headers.get("content-disposition") ?? "";
+      const filenameMatch = disposition.match(/filename="?([^"]+)"?/i);
+      const filename = filenameMatch?.[1] || "market-prices-bulk-upload-template.csv";
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to download market price template.");
+    }
+  }
+
+  async function submitBulkUpload(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setNotice("");
+    setBulkResult(null);
+    setBulkStage("validating");
+    let requestStage: "validating" | "committing" = "validating";
+
+    if (!bulkFile) {
+      setError("Choose a CSV or spreadsheet file to upload.");
+      setBulkStage("idle");
+      return;
+    }
+
+    setIsBulkSubmitting(true);
+
+    try {
+      const validationFormData = new FormData();
+      validationFormData.append("file", bulkFile);
+      const validationResponse = await authenticatedFetch(marketPriceBulkUploadValidateEndpoint, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+        body: validationFormData,
+      });
+      const validationBody = (await validationResponse.json().catch(() => null)) as unknown;
+      const validationResult = parseBulkUploadResult(validationBody);
+
+      if (validationResult && (validationResult.valid === false || validationResult.errors.length > 0)) {
+        setBulkResult(validationResult);
+        setBulkStage("idle");
+        setError("Validation found errors. Correct the file and upload it again.");
+        return;
+      }
+
+      if (!validationResponse.ok) {
+        throw new Error(getResponseMessage(validationBody, `Unable to validate market price upload (${validationResponse.status}).`));
+      }
+
+      if (!validationResult) {
+        throw new Error("The validation response was not in the expected format.");
+      }
+
+      if (validationResult.valid !== true) {
+        throw new Error("The validation response did not confirm that the file is valid.");
+      }
+
+      setBulkResult(validationResult);
+      setBulkStage("validated");
+
+      const commitFormData = new FormData();
+      commitFormData.append("file", bulkFile);
+      requestStage = "committing";
+      setBulkStage("committing");
+      const commitResponse = await authenticatedFetch(marketPriceBulkUploadCommitEndpoint, {
+        method: "POST",
+        headers: { Accept: "application/json" },
+        body: commitFormData,
+      });
+      const commitBody = (await commitResponse.json().catch(() => null)) as unknown;
+      const commitResult = parseBulkUploadResult(commitBody);
+
+      if (!commitResponse.ok) {
+        throw new Error(getResponseMessage(commitBody, `Unable to commit market price upload (${commitResponse.status}).`));
+      }
+
+      if (!commitResult) {
+        throw new Error("The commit response was not in the expected format.");
+      }
+
+      setBulkResult(commitResult);
+      setBulkStage("committed");
+      setNotice(commitResult.message || "Market prices validated and committed successfully.");
+      await loadMarketPrices();
+    } catch (requestError) {
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : requestStage === "committing"
+            ? "Validation passed, but the market price upload could not be committed."
+            : "Unable to validate the market price upload.",
+      );
+    } finally {
+      setIsBulkSubmitting(false);
+    }
+  }
+
   function resetFilters() {
     setFilterProductId("");
     setFilterProductSearch("");
@@ -629,7 +864,7 @@ export function DashboardMarketPrices() {
       </div>
 
       <section className="rounded-xl border border-black/10 bg-white p-4 shadow-[0_14px_35px_rgba(0,0,0,0.04)]">
-        <div className="grid gap-3 xl:grid-cols-[1fr_0.8fr_0.45fr_0.45fr_auto_auto] xl:items-center">
+        <div className="grid gap-3 xl:grid-cols-[1fr_0.8fr_0.45fr_0.45fr_auto_auto_auto] xl:items-center">
           <div className="relative">
             <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-black/38" size={18} />
             <input
@@ -698,6 +933,21 @@ export function DashboardMarketPrices() {
             <Plus size={17} />
             Add price
           </button>
+          <button
+            className="flex h-12 items-center justify-center gap-2 rounded-lg border border-[#f10606]/20 bg-[#fff0f0] px-5 text-sm font-black text-[#f10606]"
+            type="button"
+            onClick={() => {
+              setBulkFile(null);
+              setBulkResult(null);
+              setBulkStage("idle");
+              setError("");
+              setNotice("");
+              setIsBulkOpen(true);
+            }}
+          >
+            <Upload size={17} />
+            Bulk upload
+          </button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           <button className="text-xs font-black text-black/50 transition hover:text-[#f10606]" type="button" onClick={resetFilters}>
@@ -752,8 +1002,10 @@ export function DashboardMarketPrices() {
               key={price.id}
             >
               <div className="min-w-0">
-                <p className="truncate font-black text-black">{price.productName}</p>
-                <p className="mt-1 truncate text-xs font-medium text-black/50">{price.productId}</p>
+                <p className="truncate font-black text-black">{price.offeringSku || price.productName}</p>
+                <p className="mt-1 truncate text-xs font-medium text-black/50">
+                  {[price.productName, price.variantName, price.brandName].filter(Boolean).join(" · ") || price.productId}
+                </p>
               </div>
               <div className="min-w-0">
                 <p className="truncate font-bold text-black/72">{price.marketName}</p>
@@ -764,7 +1016,7 @@ export function DashboardMarketPrices() {
               <p className="text-xs font-bold text-black/45">{formatDate(price.observedAt || price.updatedAt)}</p>
               <div className="flex justify-end gap-2">
                 <button
-                  aria-label={`View ${price.productName} price`}
+                  aria-label={`View ${price.offeringSku || price.productName} price`}
                   className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 text-black/62 transition hover:text-[#f10606]"
                   type="button"
                   onClick={() => void loadPriceDetails(price.id)}
@@ -772,7 +1024,7 @@ export function DashboardMarketPrices() {
                   {busyAction === `detail-${price.id}` ? <LoaderCircle className="animate-spin" size={15} /> : <Eye size={16} />}
                 </button>
                 <button
-                  aria-label={`Edit ${price.productName} price`}
+                  aria-label={`Edit ${price.offeringSku || price.productName} price`}
                   className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 text-black/62 transition hover:text-[#f10606]"
                   type="button"
                   onClick={() => openEditForm(price)}
@@ -780,7 +1032,7 @@ export function DashboardMarketPrices() {
                   <Pencil size={16} />
                 </button>
                 <button
-                  aria-label={`Delete ${price.productName} price`}
+                  aria-label={`Delete ${price.offeringSku || price.productName} price`}
                   className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 text-black/62 transition hover:text-[#f10606]"
                   disabled={busyAction === `delete-${price.id}`}
                   type="button"
@@ -897,14 +1149,149 @@ export function DashboardMarketPrices() {
         </div>
       ) : null}
 
+      {isBulkOpen ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-end justify-center bg-black/45 backdrop-blur-sm sm:items-center sm:p-4"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget && !isBulkSubmitting) {
+              setIsBulkOpen(false);
+            }
+          }}
+        >
+          <section
+            aria-labelledby="market-price-bulk-upload-title"
+            aria-modal="true"
+            className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-[1.5rem] bg-white p-5 shadow-2xl sm:rounded-[1.5rem]"
+            role="dialog"
+          >
+            <header className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-black text-black" id="market-price-bulk-upload-title">Bulk Upload Market Prices</h2>
+                <p className="mt-1 text-xs font-medium text-black/48">Download the template, fill it, then upload the completed file.</p>
+              </div>
+              <button
+                aria-label="Close bulk upload"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/55"
+                disabled={isBulkSubmitting}
+                type="button"
+                onClick={() => setIsBulkOpen(false)}
+              >
+                <X size={18} />
+              </button>
+            </header>
+
+            <button
+              className="mt-5 flex h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#f10606]/20 bg-[#fff0f0] text-sm font-black text-[#f10606]"
+              type="button"
+              onClick={downloadTemplate}
+            >
+              <Upload size={16} />
+              Download sample template
+            </button>
+
+            <form className="mt-4 space-y-4" onSubmit={submitBulkUpload}>
+              <label className="block">
+                <span className="text-xs font-black text-black">Upload file</span>
+                <input
+                  accept=".csv,.xlsx,.xls"
+                  className="mt-2 block w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 py-3 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-[#f10606] file:px-4 file:py-2 file:text-xs file:font-black file:text-white"
+                  type="file"
+                  onChange={(event) => {
+                    setBulkFile(event.target.files?.[0] ?? null);
+                    setBulkResult(null);
+                    setBulkStage("idle");
+                    setError("");
+                    setNotice("");
+                  }}
+                />
+              </label>
+
+              {bulkFile ? (
+                <p className="rounded-xl bg-[#fafafa] px-3 py-2.5 text-xs font-bold text-black/55">
+                  Selected: {bulkFile.name}
+                </p>
+              ) : null}
+
+              {bulkResult ? (
+                <section className={`rounded-xl border p-4 ${bulkResult.errors.length ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50"}`}>
+                  <p className="text-sm font-black text-black">{bulkResult.message}</p>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {Object.entries(bulkResult.summary).map(([label, value]) => (
+                      <div className="rounded-lg bg-white p-3" key={label}>
+                        <p className="text-[9px] font-black uppercase text-black/42">{formatLabel(label)}</p>
+                        <p className="mt-1 text-lg font-black text-black">{value}</p>
+                      </div>
+                    ))}
+                  </div>
+                  {bulkResult.preview.length ? (
+                    <div className="mt-3 overflow-hidden rounded-lg border border-black/10 bg-white">
+                      <div className="grid grid-cols-[0.35fr_1fr_0.9fr_0.7fr_0.6fr_0.9fr] gap-2 bg-[#fff5f5] px-3 py-2 text-[9px] font-black uppercase text-black/45">
+                        <span>Row</span><span>Offering</span><span>Market</span><span>Amount</span><span>Unit</span><span>Observed</span>
+                      </div>
+                      {bulkResult.preview.map((item, index) => (
+                        <div className="grid grid-cols-[0.35fr_1fr_0.9fr_0.7fr_0.6fr_0.9fr] gap-2 border-t border-black/10 px-3 py-2 text-[10px] font-bold text-black/60" key={`${item.productOfferingSku}-${item.row ?? index}`}>
+                          <span>{item.row ?? "-"}</span>
+                          <span className="truncate">{item.productOfferingSku}</span>
+                          <span className="truncate">{item.marketName}</span>
+                          <span>{item.amount !== undefined ? formatMoney(item.amount) : "-"}</span>
+                          <span>{item.unit}</span>
+                          <span>{formatDate(item.observedAt)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {bulkResult.errors.length ? (
+                    <div className="mt-3 rounded-lg border border-red-200 bg-red-50 p-3">
+                      <p className="text-xs font-black text-red-700">Errors</p>
+                      <ul className="mt-2 space-y-1 text-xs font-bold text-red-700">
+                        {bulkResult.errors.map((item, index) => (
+                          <li key={`${item}-${index}`}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {isBulkSubmitting || bulkStage === "validated" || bulkStage === "committed" ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className={`rounded-xl p-3 ${bulkStage === "validating" ? "bg-[#fff0f0] text-[#f10606]" : "bg-emerald-50 text-emerald-700"}`}>
+                    <p className="text-[10px] font-black uppercase">1. Validate</p>
+                    <p className="mt-1 text-xs font-bold">{bulkStage === "validating" ? "Checking file..." : "Passed"}</p>
+                  </div>
+                  <div className={`rounded-xl p-3 ${bulkStage === "committing" ? "bg-[#fff0f0] text-[#f10606]" : bulkStage === "committed" ? "bg-emerald-50 text-emerald-700" : "bg-black/[0.04] text-black/40"}`}>
+                    <p className="text-[10px] font-black uppercase">2. Commit</p>
+                    <p className="mt-1 text-xs font-bold">{bulkStage === "committing" ? "Saving prices..." : bulkStage === "committed" ? "Completed" : "Waiting"}</p>
+                  </div>
+                </div>
+              ) : null}
+
+              <button
+                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#f10606] text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isBulkSubmitting}
+                type="submit"
+              >
+                {isBulkSubmitting ? <LoaderCircle className="animate-spin" size={17} /> : <Upload size={17} />}
+                {bulkStage === "validating"
+                  ? "Validating file..."
+                  : bulkStage === "committing"
+                    ? "Committing prices..."
+                    : "Validate & Upload Prices"}
+              </button>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
       {selectedPrice ? (
         <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/45 backdrop-blur-sm sm:items-center sm:p-4" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setSelectedPrice(null); }}>
           <section className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-[1.5rem] bg-white p-5 shadow-2xl sm:rounded-[1.5rem]" role="dialog" aria-modal="true">
             <header className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-[10px] font-black uppercase text-[#f10606]">{selectedPrice.marketName}</p>
-                <h2 className="mt-1 text-lg font-black text-black">{selectedPrice.productName}</h2>
-                <p className="mt-1 text-xs font-bold text-black/42">{selectedPrice.id}</p>
+                <h2 className="mt-1 text-lg font-black text-black">{selectedPrice.offeringSku || selectedPrice.productName}</h2>
+                <p className="mt-1 text-xs font-bold text-black/42">{selectedPrice.productName}</p>
               </div>
               <button className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/55" type="button" onClick={() => setSelectedPrice(null)}>
                 <X size={18} />
@@ -913,6 +1300,8 @@ export function DashboardMarketPrices() {
             <div className="mt-5 grid grid-cols-2 gap-3">
               <DetailMetric label="Amount" value={formatMoney(selectedPrice.amount, selectedPrice.currency)} />
               <DetailMetric label="Unit" value={`${selectedPrice.quantity} ${selectedPrice.unit}`} />
+              <DetailMetric label="Variant" value={selectedPrice.variantName || "Not provided"} />
+              <DetailMetric label="Brand" value={selectedPrice.brandName || "Not provided"} />
               <DetailMetric label="Quality" value={selectedPrice.qualityGrade || "Not provided"} />
               <DetailMetric label="Source" value={selectedPrice.source || "Not provided"} />
               <DetailMetric label="Observed" value={formatDate(selectedPrice.observedAt)} />

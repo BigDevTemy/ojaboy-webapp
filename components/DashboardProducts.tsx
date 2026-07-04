@@ -8,8 +8,10 @@ import {
   LoaderCircle,
   PackagePlus,
   PackageSearch,
+  Pencil,
   RefreshCw,
   Search,
+  Trash2,
   Upload,
   X,
 } from "lucide-react";
@@ -17,6 +19,7 @@ import Image from "next/image";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { API_BASE_URL, PRODUCTS_URL } from "@/Serverurls";
 import { authenticatedFetch } from "@/lib/authClient";
+import { ProductCreationFlow } from "@/components/ProductCreationFlow";
 
 type ProductStatus = "active" | "inactive" | "draft" | string;
 
@@ -27,56 +30,65 @@ type ProductUnit = {
   marketName?: string;
 };
 
-type Product = {
+export type ProductVariant = {
+  id: string;
+  name: string;
+  code: string;
+  isActive: boolean;
+};
+
+export type ProductOffering = {
+  id: string;
+  sku: string;
+  isActive: boolean;
+  variant?: ProductVariant;
+  brand?: { id: string; name: string; manufacturerId?: string; manufacturerName?: string };
+  package?: { id: string; name: string; packageType?: string; baseUnit?: string; quantity?: number };
+};
+
+export type ProductMarketPrice = {
+  id: string;
+  productOfferingId: string;
+  marketId: string;
+  marketName: string;
+  amount: number;
+  currency: string;
+  unit: string;
+  quantity: number;
+  qualityGrade: string;
+  observedAt?: string;
+};
+
+export type Product = {
   id: string;
   name: string;
   description?: string;
   sku?: string;
+  categoryId?: string;
   category?: string;
   imageUrl?: string;
   status: ProductStatus;
   availableUnits: ProductUnit[];
+  variants: ProductVariant[];
+  offerings: ProductOffering[];
+  marketPrices: ProductMarketPrice[];
   createdAt?: string;
   updatedAt?: string;
 };
 
-type ProductFormState = {
-  name: string;
-  description: string;
-  sku: string;
-  category: string;
-  imageUrl: string;
-  status: ProductStatus;
-};
-
 type BulkUploadResult = {
+  valid?: boolean;
   message: string;
-  summary: {
-    received: number;
-    valid: number;
-    inserted: number;
-    skipped: number;
-    failed: number;
-  };
+  summary: Record<string, number>;
   errors: string[];
 };
 
 const productsEndpoint = `${API_BASE_URL}${PRODUCTS_URL}`;
-const productBulkUploadEndpoint = `${productsEndpoint}/bulk-upload`;
-const productBulkUploadTemplateEndpoint = `${productBulkUploadEndpoint}/template`;
+const productBulkUploadTemplateEndpoint = `${API_BASE_URL}product-catalogue/bulk-upload/template`;
+const productBulkUploadValidateEndpoint = `${API_BASE_URL}product-catalogue/bulk-upload/validate`;
+const productBulkUploadCommitEndpoint = `${API_BASE_URL}product-catalogue/bulk-upload/commit`;
 const pageSizeOptions = [10, 20, 50];
 const statusOptions = ["all", "active", "inactive", "draft"];
-
-function createEmptyForm(): ProductFormState {
-  return {
-    name: "",
-    description: "",
-    sku: "",
-    category: "",
-    imageUrl: "",
-    status: "active",
-  };
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -159,16 +171,100 @@ function parseProduct(value: unknown): Product | null {
         return unit ? [unit] : [];
       })
     : [];
+  const category = isRecord(value.category) ? value.category : null;
+  const variants = Array.isArray(value.variants)
+    ? value.variants.flatMap((item): ProductVariant[] => {
+        if (!isRecord(item)) return [];
+        const variantId = readText(item, ["id"]);
+        const variantName = readText(item, ["name"]);
+        if (!variantId || !variantName) return [];
+        return [{
+          id: variantId,
+          name: variantName,
+          code: readText(item, ["code"]),
+          isActive: typeof item.isActive === "boolean" ? item.isActive : true,
+        }];
+      })
+    : [];
+  const offerings = Array.isArray(value.offerings)
+    ? value.offerings.flatMap((item): ProductOffering[] => {
+        if (!isRecord(item)) return [];
+        const offeringId = readText(item, ["id"]);
+        const offeringSku = readText(item, ["sku"]);
+        if (!offeringId || !offeringSku) return [];
+        const variant = isRecord(item.variant) ? item.variant : null;
+        const brand = isRecord(item.brand) ? item.brand : null;
+        const manufacturer = brand && isRecord(brand.manufacturer) ? brand.manufacturer : null;
+        const packageValue = isRecord(item.package) ? item.package : null;
+        return [{
+          id: offeringId,
+          sku: offeringSku,
+          isActive: typeof item.isActive === "boolean" ? item.isActive : true,
+          variant: variant
+            ? {
+                id: readText(variant, ["id"]),
+                name: readText(variant, ["name"]),
+                code: readText(variant, ["code"]),
+                isActive: typeof variant.isActive === "boolean" ? variant.isActive : true,
+              }
+            : undefined,
+          brand: brand
+            ? {
+                id: readText(brand, ["id"]),
+                name: readText(brand, ["name"]),
+                manufacturerId: readText(brand, ["manufacturerId"]) || undefined,
+                manufacturerName: manufacturer ? readText(manufacturer, ["name"]) || undefined : undefined,
+              }
+            : undefined,
+          package: packageValue
+            ? {
+                id: readText(packageValue, ["id"]),
+                name: readText(packageValue, ["name"]),
+                packageType: readText(packageValue, ["packageType"]) || undefined,
+                baseUnit: readText(packageValue, ["baseUnit"]) || undefined,
+                quantity: readNumber(packageValue, ["quantity"]),
+              }
+            : undefined,
+        }];
+      })
+    : [];
+  const marketPrices = Array.isArray(value.marketPrices)
+    ? value.marketPrices.flatMap((item): ProductMarketPrice[] => {
+        if (!isRecord(item)) return [];
+        const priceId = readText(item, ["id"]);
+        const offeringId = readText(item, ["productOfferingId"]);
+        const marketId = readText(item, ["marketId"]);
+        const amount = readNumber(item, ["amount"]);
+        if (!priceId || !offeringId || !marketId || amount === undefined) return [];
+        const market = isRecord(item.market) ? item.market : null;
+        return [{
+          id: priceId,
+          productOfferingId: offeringId,
+          marketId,
+          marketName: market ? readText(market, ["marketname", "name"]) : "Market",
+          amount,
+          currency: readText(item, ["currency"]) || "NGN",
+          unit: readText(item, ["unit"]) || "unit",
+          quantity: readNumber(item, ["quantity"]) ?? 1,
+          qualityGrade: readText(item, ["qualityGrade"]) || "standard",
+          observedAt: readText(item, ["observedAt"]) || undefined,
+        }];
+      })
+    : [];
 
   return {
     id,
     name,
     description: readText(value, ["description"]) || undefined,
     sku: readText(value, ["sku"]) || undefined,
-    category: readText(value, ["category"]) || undefined,
+    categoryId: readText(value, ["categoryId"]) || (category ? readText(category, ["id"]) : "") || undefined,
+    category: (category ? readText(category, ["name"]) : "") || readText(value, ["categoryName"]) || undefined,
     imageUrl: readText(value, ["imageUrl", "image"]) || undefined,
     status: readText(value, ["status"]) || "active",
     availableUnits,
+    variants,
+    offerings,
+    marketPrices,
     createdAt: readText(value, ["createdAt"]) || undefined,
     updatedAt: readText(value, ["updatedAt"]) || undefined,
   };
@@ -215,47 +311,63 @@ function formatDate(value?: string) {
 }
 
 function formatLabel(value: string) {
-  return value.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function toCreatePayload(form: ProductFormState) {
-  return {
-    name: form.name.trim(),
-    ...(form.description.trim() ? { description: form.description.trim() } : {}),
-    ...(form.sku.trim() ? { sku: form.sku.trim() } : {}),
-    ...(form.category.trim() ? { category: form.category.trim() } : {}),
-    ...(form.imageUrl.trim() ? { imageUrl: form.imageUrl.trim() } : {}),
-    status: form.status,
-  };
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 function parseBulkUploadResult(value: unknown): BulkUploadResult | null {
-  if (!isRecord(value) || !isRecord(value.summary)) {
+  if (!isRecord(value)) {
     return null;
   }
 
+  const payload = isRecord(value.data) ? value.data : value;
+  const summary = isRecord(payload.summary) ? payload.summary : payload;
+  const rawErrors = Array.isArray(payload.errors)
+    ? payload.errors
+    : Array.isArray(value.errors)
+      ? value.errors
+      : [];
+  const parsedSummary = Object.fromEntries(
+    Object.entries(summary).flatMap(([key, item]) => {
+      const parsed = Number(item);
+      return Number.isFinite(parsed) ? [[key, parsed]] : [];
+    }),
+  );
+
   return {
-    message: readText(value, ["message"]) || "Product bulk upload processed.",
-    summary: {
-      received: readNumber(value.summary, ["received"]) ?? 0,
-      valid: readNumber(value.summary, ["valid"]) ?? 0,
-      inserted: readNumber(value.summary, ["inserted"]) ?? 0,
-      skipped: readNumber(value.summary, ["skipped"]) ?? 0,
-      failed: readNumber(value.summary, ["failed"]) ?? 0,
-    },
-    errors: Array.isArray(value.errors)
-      ? value.errors.flatMap((item): string[] => {
+    valid:
+      typeof payload.valid === "boolean"
+        ? payload.valid
+        : typeof value.valid === "boolean"
+          ? value.valid
+          : undefined,
+    message:
+      readText(payload, ["message"]) ||
+      readText(value, ["message"]) ||
+      "Product bulk upload processed.",
+    summary: Object.keys(parsedSummary).length
+      ? parsedSummary
+      : {
+          received: readNumber(summary, ["received", "receivedRows", "total", "totalRows"]) ?? 0,
+          failed: readNumber(summary, ["failed", "invalid", "invalidRows"]) ?? rawErrors.length,
+        },
+    errors: rawErrors.flatMap((item): string[] => {
           if (typeof item === "string") {
             return [item];
           }
 
           if (isRecord(item)) {
-            return [readText(item, ["message", "error"]) || JSON.stringify(item)];
+            const row = readText(item, ["row", "rowNumber", "line"]);
+            const field = readText(item, ["field", "column"]);
+            const message = readText(item, ["message", "error", "reason"]) || JSON.stringify(item);
+            const location = [row ? `Row ${row}` : "", field].filter(Boolean).join(", ");
+            return [`${location ? `${location}: ` : ""}${message}`];
           }
 
           return [];
-        })
-      : [],
+        }),
   };
 }
 
@@ -270,10 +382,11 @@ export function DashboardProducts() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isBulkOpen, setIsBulkOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
-  const [form, setForm] = useState<ProductFormState>(createEmptyForm);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [busyAction, setBusyAction] = useState("");
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [bulkResult, setBulkResult] = useState<BulkUploadResult | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [bulkStage, setBulkStage] = useState<"idle" | "validating" | "validated" | "committing" | "committed">("idle");
   const [isBulkSubmitting, setIsBulkSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -330,6 +443,7 @@ export function DashboardProducts() {
   }, [category, limit, offset, search, status]);
 
   async function loadProductDetails(id: string) {
+    setBusyAction(`view-${id}`);
     setError("");
     setNotice("");
 
@@ -356,6 +470,53 @@ export function DashboardProducts() {
       );
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Unable to load product.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function openEditProduct(id: string) {
+    setBusyAction(`edit-${id}`);
+    setError("");
+    try {
+      const response = await authenticatedFetch(`${productsEndpoint}/${id}`, {
+        headers: { Accept: "application/json" },
+      });
+      const body = (await response.json().catch(() => null)) as unknown;
+      if (!response.ok) {
+        throw new Error(getResponseMessage(body, `Unable to load product (${response.status}).`));
+      }
+      const value = isRecord(body) ? body.data ?? body.product ?? body : body;
+      const product = parseProduct(Array.isArray(value) ? value[0] : value);
+      if (!product) throw new Error("The product response was not in the expected format.");
+      setEditingProduct(product);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to load product.");
+    } finally {
+      setBusyAction("");
+    }
+  }
+
+  async function deleteProduct(product: Product) {
+    if (!window.confirm(`Delete "${product.name}" and its catalogue relationships? This cannot be undone.`)) return;
+    setBusyAction(`delete-${product.id}`);
+    setError("");
+    setNotice("");
+    try {
+      const response = await authenticatedFetch(`${productsEndpoint}/${product.id}`, {
+        method: "DELETE",
+        headers: { Accept: "application/json" },
+      });
+      const body = (await response.json().catch(() => null)) as unknown;
+      if (!response.ok) {
+        throw new Error(getResponseMessage(body, `Unable to delete product (${response.status}).`));
+      }
+      setProducts((current) => current.filter((item) => item.id !== product.id));
+      setNotice("Product deleted.");
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to delete product.");
+    } finally {
+      setBusyAction("");
     }
   }
 
@@ -376,7 +537,6 @@ export function DashboardProducts() {
   }
 
   function openCreateModal() {
-    setForm(createEmptyForm());
     setError("");
     setNotice("");
     setIsCreateOpen(true);
@@ -385,6 +545,7 @@ export function DashboardProducts() {
   function openBulkModal() {
     setBulkFile(null);
     setBulkResult(null);
+    setBulkStage("idle");
     setError("");
     setNotice("");
     setIsBulkOpen(true);
@@ -458,87 +619,98 @@ export function DashboardProducts() {
     }
   }
 
-  async function submitProduct(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setError("");
-    setNotice("");
-
-    const payload = toCreatePayload(form);
-
-    if (!payload.name) {
-      setError("Enter a product name.");
-      return;
-    }
-
-    setIsSubmitting(true);
-
-    try {
-      const response = await authenticatedFetch(productsEndpoint, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
-      const body = (await response.json().catch(() => null)) as unknown;
-
-      if (!response.ok) {
-        throw new Error(getResponseMessage(body, `Unable to create product (${response.status}).`));
-      }
-
-      setNotice("Product created successfully.");
-      setIsCreateOpen(false);
-      setOffset(0);
-      await loadProducts();
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to create product.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  }
-
   async function submitBulkUpload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError("");
     setNotice("");
     setBulkResult(null);
+    setBulkStage("validating");
+    let requestStage: "validating" | "committing" = "validating";
 
     if (!bulkFile) {
       setError("Choose a CSV or spreadsheet file to upload.");
       return;
     }
 
-    const formData = new FormData();
-    formData.append("file", bulkFile);
     setIsBulkSubmitting(true);
 
     try {
-      const response = await authenticatedFetch(productBulkUploadEndpoint, {
+      const validationFormData = new FormData();
+      validationFormData.append("file", bulkFile);
+      const validationResponse = await authenticatedFetch(productBulkUploadValidateEndpoint, {
         method: "POST",
         headers: {
           Accept: "application/json",
         },
-        body: formData,
+        body: validationFormData,
       });
-      const body = (await response.json().catch(() => null)) as unknown;
+      const validationBody = (await validationResponse.json().catch(() => null)) as unknown;
+      const validationResult = parseBulkUploadResult(validationBody);
 
-      if (!response.ok) {
-        throw new Error(getResponseMessage(body, `Unable to upload products (${response.status}).`));
+      if (validationResult && (validationResult.valid === false || validationResult.errors.length > 0)) {
+        setBulkResult(validationResult);
+        setBulkStage("idle");
+        setError("Validation found errors. Correct the file and upload it again.");
+        return;
       }
 
-      const result = parseBulkUploadResult(body);
-
-      if (!result) {
-        throw new Error("The bulk upload response was not in the expected format.");
+      if (!validationResponse.ok) {
+        throw new Error(
+          getResponseMessage(
+            validationBody,
+            `Unable to validate product upload (${validationResponse.status}).`,
+          ),
+        );
       }
 
-      setBulkResult(result);
-      setNotice(result.message);
+      if (!validationResult) {
+        throw new Error("The validation response was not in the expected format.");
+      }
+
+      if (validationResult.valid !== true) {
+        throw new Error("The validation response did not confirm that the file is valid.");
+      }
+
+      setBulkResult(validationResult);
+      setBulkStage("validated");
+
+      const commitFormData = new FormData();
+      commitFormData.append("file", bulkFile);
+      requestStage = "committing";
+      setBulkStage("committing");
+      const commitResponse = await authenticatedFetch(productBulkUploadCommitEndpoint, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+        },
+        body: commitFormData,
+      });
+      const commitBody = (await commitResponse.json().catch(() => null)) as unknown;
+      const commitResult = parseBulkUploadResult(commitBody);
+
+      if (!commitResponse.ok) {
+        throw new Error(
+          getResponseMessage(commitBody, `Unable to commit product upload (${commitResponse.status}).`),
+        );
+      }
+
+      if (!commitResult) {
+        throw new Error("The commit response was not in the expected format.");
+      }
+
+      setBulkResult(commitResult);
+      setBulkStage("committed");
+      setNotice(commitResult.message || "Products validated and committed successfully.");
       setOffset(0);
       await loadProducts();
     } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Unable to upload products.");
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : requestStage === "committing"
+            ? "Validation passed, but the product upload could not be committed."
+            : "Unable to validate the product upload.",
+      );
     } finally {
       setIsBulkSubmitting(false);
     }
@@ -679,7 +851,7 @@ export function DashboardProducts() {
           <span>Units</span>
           <span>Status</span>
           <span>Updated</span>
-          <span className="text-right">View</span>
+          <span className="text-right">Actions</span>
         </div>
 
         {isLoading ? (
@@ -710,24 +882,15 @@ export function DashboardProducts() {
                 </div>
               </div>
               <p className="min-w-0 truncate font-bold text-black/68">{product.category || "Uncategorized"}</p>
-              <div className="min-w-0">
-                {product.availableUnits.length ? (
-                  <div className="flex flex-wrap gap-1">
-                    {product.availableUnits.slice(0, 3).map((unit) => (
-                      <span className="rounded-full bg-[#fbfbfb] px-2 py-1 text-[10px] font-black text-black/55" key={`${product.id}-${unit.unit}`}>
-                        {unit.unit}: {formatMoney(unit.currentPrice, unit.currency)}
-                      </span>
-                    ))}
-                    {product.availableUnits.length > 3 ? (
-                      <span className="rounded-full bg-black/[0.04] px-2 py-1 text-[10px] font-black text-black/45">
-                        +{product.availableUnits.length - 3}
-                      </span>
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className="text-xs font-bold text-black/38">No units yet</p>
-                )}
-              </div>
+              <p className="min-w-0 truncate text-xs font-bold text-black/58">
+                {Array.from(
+                  new Set(
+                    product.offerings
+                      .map((offering) => offering.package?.name)
+                      .filter((name): name is string => Boolean(name)),
+                  ),
+                ).join(", ") || "No packages"}
+              </p>
               <span
                 className={`w-max rounded-full px-3 py-1 text-[10px] font-black ${
                   product.status === "active" ? "bg-emerald-50 text-emerald-700" : "bg-black/[0.04] text-black/50"
@@ -736,14 +899,32 @@ export function DashboardProducts() {
                 {formatLabel(product.status)}
               </span>
               <p className="text-xs font-bold text-black/45">{formatDate(product.updatedAt || product.createdAt)}</p>
-              <div className="flex justify-end">
+              <div className="flex justify-end gap-2">
                 <button
                   aria-label={`View ${product.name}`}
                   className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 text-black/62 transition hover:text-[#f10606]"
                   type="button"
                   onClick={() => void loadProductDetails(product.id)}
                 >
-                  <Eye size={16} />
+                  {busyAction === `view-${product.id}` ? <LoaderCircle className="animate-spin" size={15} /> : <Eye size={16} />}
+                </button>
+                <button
+                  aria-label={`Edit ${product.name}`}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 text-black/62 transition hover:text-[#f10606]"
+                  disabled={Boolean(busyAction)}
+                  type="button"
+                  onClick={() => void openEditProduct(product.id)}
+                >
+                  {busyAction === `edit-${product.id}` ? <LoaderCircle className="animate-spin" size={15} /> : <Pencil size={16} />}
+                </button>
+                <button
+                  aria-label={`Delete ${product.name}`}
+                  className="flex h-9 w-9 items-center justify-center rounded-lg border border-black/10 text-black/62 transition hover:text-[#f10606]"
+                  disabled={Boolean(busyAction)}
+                  type="button"
+                  onClick={() => void deleteProduct(product)}
+                >
+                  {busyAction === `delete-${product.id}` ? <LoaderCircle className="animate-spin" size={15} /> : <Trash2 size={16} />}
                 </button>
               </div>
             </article>
@@ -780,110 +961,26 @@ export function DashboardProducts() {
       </div>
 
       {isCreateOpen ? (
-        <div
-          className="fixed inset-0 z-[120] flex items-end justify-center bg-black/45 backdrop-blur-sm sm:items-center sm:p-4"
-          role="presentation"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget && !isSubmitting) {
-              setIsCreateOpen(false);
-            }
+        <ProductCreationFlow
+          onClose={() => setIsCreateOpen(false)}
+          onCreated={async () => {
+            setNotice("Product, offerings, and initial prices created successfully.");
+            setOffset(0);
+            await loadProducts();
           }}
-        >
-          <section
-            aria-labelledby="create-product-title"
-            aria-modal="true"
-            className="max-h-[90dvh] w-full max-w-lg overflow-y-auto rounded-t-[1.5rem] bg-white p-5 shadow-2xl sm:rounded-[1.5rem]"
-            role="dialog"
-          >
-            <header className="flex items-start justify-between gap-4">
-              <div>
-                <h2 className="text-lg font-black text-black" id="create-product-title">Create Product</h2>
-                <p className="mt-1 text-xs font-medium text-black/48">Add a product to the catalog.</p>
-              </div>
-              <button
-                aria-label="Close create product"
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-black/[0.04] text-black/55"
-                disabled={isSubmitting}
-                type="button"
-                onClick={() => setIsCreateOpen(false)}
-              >
-                <X size={18} />
-              </button>
-            </header>
+        />
+      ) : null}
 
-            <form className="mt-5 space-y-4" onSubmit={submitProduct}>
-              <label className="block">
-                <span className="text-xs font-black text-black">Name</span>
-                <input
-                  className="mt-2 h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 text-sm outline-none focus:border-[#f10606]/45"
-                  placeholder="Local Rice"
-                  value={form.name}
-                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                />
-              </label>
-              <label className="block">
-                <span className="text-xs font-black text-black">Description</span>
-                <textarea
-                  className="mt-2 min-h-24 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 py-3 text-sm outline-none focus:border-[#f10606]/45"
-                  placeholder="Clean local rice sold by bag."
-                  value={form.description}
-                  onChange={(event) => setForm((current) => ({ ...current, description: event.target.value }))}
-                />
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="block">
-                  <span className="text-xs font-black text-black">SKU</span>
-                  <input
-                    className="mt-2 h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 text-sm outline-none focus:border-[#f10606]/45"
-                    placeholder="PROD-GRA-RICE"
-                    value={form.sku}
-                    onChange={(event) => setForm((current) => ({ ...current, sku: event.target.value }))}
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-xs font-black text-black">Category</span>
-                  <input
-                    className="mt-2 h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 text-sm outline-none focus:border-[#f10606]/45"
-                    placeholder="Grains"
-                    value={form.category}
-                    onChange={(event) => setForm((current) => ({ ...current, category: event.target.value }))}
-                  />
-                </label>
-              </div>
-              <div className="grid grid-cols-[1fr_0.45fr] gap-3">
-                <label className="block">
-                  <span className="text-xs font-black text-black">Image URL</span>
-                  <input
-                    className="mt-2 h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 text-sm outline-none focus:border-[#f10606]/45"
-                    placeholder="https://..."
-                    value={form.imageUrl}
-                    onChange={(event) => setForm((current) => ({ ...current, imageUrl: event.target.value }))}
-                  />
-                </label>
-                <label className="block">
-                  <span className="text-xs font-black text-black">Status</span>
-                  <select
-                    className="mt-2 h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-3 text-sm font-black outline-none focus:border-[#f10606]/45"
-                    value={form.status}
-                    onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))}
-                  >
-                    {statusOptions.filter((item) => item !== "all").map((item) => (
-                      <option key={item} value={item}>{formatLabel(item)}</option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-              <button
-                className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#f10606] text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={isSubmitting}
-                type="submit"
-              >
-                {isSubmitting ? <LoaderCircle className="animate-spin" size={17} /> : <PackagePlus size={17} />}
-                {isSubmitting ? "Creating..." : "Create Product"}
-              </button>
-            </form>
-          </section>
-        </div>
+      {editingProduct ? (
+        <ProductCreationFlow
+          editProduct={editingProduct}
+          onClose={() => setEditingProduct(null)}
+          onCreated={async () => {
+            setEditingProduct(null);
+            setNotice("Product catalogue updated successfully.");
+            await loadProducts();
+          }}
+        />
       ) : null}
 
       {selectedProduct ? (
@@ -951,30 +1048,32 @@ export function DashboardProducts() {
             </div>
 
             <section className="mt-5 rounded-xl border border-black/10 bg-[#fafafa] p-4">
-              <h3 className="text-sm font-black text-black">Available Units</h3>
-              {selectedProduct.availableUnits.length ? (
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {selectedProduct.availableUnits.map((unit) => (
-                    <article className="rounded-lg bg-white p-3" key={`${selectedProduct.id}-${unit.unit}-${unit.marketName ?? ""}`}>
+              <h3 className="text-sm font-black text-black">Sellable Offerings</h3>
+              {selectedProduct.offerings.length ? (
+                <div className="mt-3 space-y-2">
+                  {selectedProduct.offerings.map((offering) => (
+                    <article className="rounded-lg bg-white p-3" key={offering.id}>
                       <div className="flex items-start justify-between gap-3">
                         <div>
-                          <p className="text-xs font-black text-black">{unit.unit}</p>
-                          <p className="mt-1 text-[10px] font-bold text-black/42">
-                            {unit.marketName || "Market not attached"}
+                          <p className="text-xs font-black text-black">{offering.sku}</p>
+                          <p className="mt-1 text-[10px] font-bold text-black/45">
+                            {[offering.variant?.name, offering.brand?.name || "Unbranded", offering.package?.name].filter(Boolean).join(" · ")}
                           </p>
                         </div>
-                        <p className="shrink-0 text-sm font-black text-[#f10606]">
-                          {formatMoney(unit.currentPrice, unit.currency)}
-                        </p>
+                        <span className={`rounded-full px-2 py-1 text-[9px] font-black ${offering.isActive ? "bg-emerald-50 text-emerald-700" : "bg-black/[0.05] text-black/45"}`}>
+                          {offering.isActive ? "Active" : "Inactive"}
+                        </span>
                       </div>
+                      {selectedProduct.marketPrices.filter((price) => price.productOfferingId === offering.id).map((price) => (
+                        <div className="mt-2 flex items-center justify-between rounded-lg bg-[#fafafa] px-3 py-2" key={price.id}>
+                          <p className="text-[10px] font-bold text-black/50">{price.marketName} · {price.quantity} {price.unit}</p>
+                          <p className="text-xs font-black text-[#f10606]">{formatMoney(price.amount, price.currency)}</p>
+                        </div>
+                      ))}
                     </article>
                   ))}
                 </div>
-              ) : (
-                <p className="mt-3 rounded-lg bg-white px-3 py-3 text-xs font-bold text-black/45">
-                  No available units returned for this product.
-                </p>
-              )}
+              ) : <p className="mt-3 text-xs font-bold text-black/45">No offerings returned.</p>}
             </section>
           </section>
         </div>
@@ -1030,7 +1129,13 @@ export function DashboardProducts() {
                   accept=".csv,.xlsx,.xls"
                   className="mt-2 block w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 py-3 text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-[#f10606] file:px-4 file:py-2 file:text-xs file:font-black file:text-white"
                   type="file"
-                  onChange={(event) => setBulkFile(event.target.files?.[0] ?? null)}
+                  onChange={(event) => {
+                    setBulkFile(event.target.files?.[0] ?? null);
+                    setBulkResult(null);
+                    setBulkStage("idle");
+                    setError("");
+                    setNotice("");
+                  }}
                 />
               </label>
 
@@ -1041,7 +1146,7 @@ export function DashboardProducts() {
               ) : null}
 
               {bulkResult ? (
-                <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <section className={`rounded-xl border p-4 ${bulkResult.errors.length ? "border-red-200 bg-red-50" : "border-emerald-200 bg-emerald-50"}`}>
                   <p className="text-sm font-black text-black">{bulkResult.message}</p>
                   <div className="mt-3 grid grid-cols-3 gap-2">
                     {Object.entries(bulkResult.summary).map(([label, value]) => (
@@ -1064,13 +1169,30 @@ export function DashboardProducts() {
                 </section>
               ) : null}
 
+              {isBulkSubmitting || bulkStage === "validated" || bulkStage === "committed" ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <div className={`rounded-xl p-3 ${bulkStage === "validating" ? "bg-[#fff0f0] text-[#f10606]" : "bg-emerald-50 text-emerald-700"}`}>
+                    <p className="text-[10px] font-black uppercase">1. Validate</p>
+                    <p className="mt-1 text-xs font-bold">{bulkStage === "validating" ? "Checking file..." : "Passed"}</p>
+                  </div>
+                  <div className={`rounded-xl p-3 ${bulkStage === "committing" ? "bg-[#fff0f0] text-[#f10606]" : bulkStage === "committed" ? "bg-emerald-50 text-emerald-700" : "bg-black/[0.04] text-black/40"}`}>
+                    <p className="text-[10px] font-black uppercase">2. Commit</p>
+                    <p className="mt-1 text-xs font-bold">{bulkStage === "committing" ? "Saving products..." : bulkStage === "committed" ? "Completed" : "Waiting"}</p>
+                  </div>
+                </div>
+              ) : null}
+
               <button
                 className="flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#f10606] text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={isBulkSubmitting}
                 type="submit"
               >
                 {isBulkSubmitting ? <LoaderCircle className="animate-spin" size={17} /> : <Upload size={17} />}
-                {isBulkSubmitting ? "Uploading..." : "Upload Products"}
+                {bulkStage === "validating"
+                  ? "Validating file..."
+                  : bulkStage === "committing"
+                    ? "Committing products..."
+                    : "Validate & Upload Products"}
               </button>
             </form>
           </section>

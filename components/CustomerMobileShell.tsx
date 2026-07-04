@@ -33,7 +33,7 @@ const customerNavItems = [
   { label: "Home", href: "/dashboard", icon: House },
   { label: "Orders", href: "/dashboard/orders", icon: ReceiptText },
   { label: "AI", href: "/dashboard/ai-assistant", icon: Bot },
-  { label: "Messages", href: "/dashboard/messages", icon: MessageCircle },
+  { label: "Support", href: "/dashboard/support", icon: MessageCircle },
   { label: "Profile", href: "/dashboard/profile", icon: UserRound },
 ] as const;
 
