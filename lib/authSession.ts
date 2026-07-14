@@ -13,7 +13,10 @@ export type AuthUser = {
     label: string;
     formattedAddress: string;
     isDefault: boolean;
-    deliveryZone?: unknown;
+    deliveryZone?: {
+      id: string;
+      name: string;
+    } | null;
   } | null;
 };
 

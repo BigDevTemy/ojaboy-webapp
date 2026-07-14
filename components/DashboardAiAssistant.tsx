@@ -10,6 +10,7 @@ import {
   Send,
   ShoppingBasket,
   Sparkles,
+  X,
 } from "lucide-react";
 import { AgentMessageContent } from "@/components/AgentMessageContent";
 import { askAgent } from "@/lib/agentChat";
@@ -26,6 +27,13 @@ type ChatMessage = {
   role: "assistant" | "user";
   text: string;
 };
+
+type QueuedMessage = {
+  id: string;
+  text: string;
+};
+
+const MAX_QUEUE_SIZE = 5;
 
 const initialMessages: ChatMessage[] = [
   {
@@ -46,48 +54,94 @@ export function DashboardAiAssistant() {
   const [question, setQuestion] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [queue, setQueue] = useState<QueuedMessage[]>([]);
+  const queueRef = useRef<QueuedMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [isLoading, messages]);
 
-  async function sendQuestion(value: string) {
-    const trimmedQuestion = value.trim();
+  function updateQueue(next: QueuedMessage[]) {
+    queueRef.current = next;
+    setQueue(next);
+  }
 
-    if (!trimmedQuestion || isLoading) {
+  function enqueue(text: string) {
+    updateQueue([...queueRef.current, { id: crypto.randomUUID(), text }]);
+  }
+
+  function removeFromQueue(id: string) {
+    updateQueue(queueRef.current.filter((item) => item.id !== id));
+  }
+
+  function loadFromQueue(id: string) {
+    const item = queueRef.current.find((queued) => queued.id === id);
+    if (!item) {
       return;
     }
+    setQuestion(item.text);
+    removeFromQueue(id);
+  }
 
+  async function sendToEndpoint(text: string) {
     setMessages((current) => [
       ...current,
-      { id: crypto.randomUUID(), role: "user", text: trimmedQuestion },
+      { id: crypto.randomUUID(), role: "user", text },
     ]);
-    setQuestion("");
     setError("");
     setIsLoading(true);
 
     try {
-      const response = await askAgent(trimmedQuestion);
+      const response = await askAgent(text);
       setMessages((current) => [
         ...current,
         { id: crypto.randomUUID(), role: "assistant", text: response.answer },
       ]);
+      setIsLoading(false);
+
+      const [next, ...rest] = queueRef.current;
+      if (next) {
+        updateQueue(rest);
+        void sendToEndpoint(next.text);
+      }
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
           : "The agent is unavailable. Please try again.",
       );
-    } finally {
       setIsLoading(false);
     }
   }
 
+  async function submitQuestion(value: string) {
+    const trimmedQuestion = value.trim();
+
+    if (!trimmedQuestion) {
+      return;
+    }
+
+    if (isLoading) {
+      if (queueRef.current.length >= MAX_QUEUE_SIZE) {
+        setError(`Queue is full (${MAX_QUEUE_SIZE} messages). Remove one to add more.`);
+        return;
+      }
+      enqueue(trimmedQuestion);
+      setQuestion("");
+      return;
+    }
+
+    setQuestion("");
+    await sendToEndpoint(trimmedQuestion);
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    void sendQuestion(question);
+    void submitQuestion(question);
   }
+
+  const isQueueFull = queue.length >= MAX_QUEUE_SIZE;
 
   return (
     <div className="space-y-5">
@@ -117,8 +171,8 @@ export function DashboardAiAssistant() {
                     className="rounded-lg border border-black/10 bg-white px-3 py-2 text-xs font-black text-black/72 shadow-sm transition hover:text-[#f10606] disabled:cursor-not-allowed disabled:opacity-60"
                     key={prompt}
                     type="button"
-                    onClick={() => void sendQuestion(prompt)}
-                    disabled={isLoading}
+                    onClick={() => void submitQuestion(prompt)}
+                    disabled={isLoading && isQueueFull}
                   >
                     {prompt}
                   </button>
@@ -167,19 +221,45 @@ export function DashboardAiAssistant() {
               <div ref={messagesEndRef} />
             </div>
 
+            {queue.length > 0 ? (
+              <div className="mt-4 max-h-32 overflow-y-auto rounded-lg border border-black/10 bg-[#fbfbfb]">
+                {queue.map((item) => (
+                  <div
+                    className="flex items-center gap-2 border-b border-black/[0.05] px-3 py-2 last:border-b-0"
+                    key={item.id}
+                  >
+                    <button
+                      type="button"
+                      className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-black/60 hover:text-black/80"
+                      onClick={() => loadFromQueue(item.id)}
+                    >
+                      {item.text}
+                    </button>
+                    <button
+                      type="button"
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-black/35 hover:bg-black/5 hover:text-red-600"
+                      aria-label="Remove queued message"
+                      onClick={() => removeFromQueue(item.id)}
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+
             <form className="relative mt-5" onSubmit={handleSubmit}>
               <input
                 className="h-12 w-full rounded-lg border border-black/10 bg-white px-4 pr-14 text-sm font-medium text-black outline-none shadow-sm placeholder:text-black/38"
                 placeholder="Ask a market question..."
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
-                disabled={isLoading}
               />
               <button
                 className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg bg-[#f10606] text-white shadow-[0_12px_24px_rgba(241,6,6,0.24)] disabled:cursor-not-allowed disabled:opacity-60"
                 type="submit"
                 aria-label="Send AI question"
-                disabled={isLoading || !question.trim()}
+                disabled={!question.trim() || (isLoading && isQueueFull)}
               >
                 <Send size={17} />
               </button>

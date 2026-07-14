@@ -1,12 +1,15 @@
 "use client";
 
 import Script from "next/script";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
   Building2,
+  CalendarDays,
   CheckCircle2,
+  ChevronLeft,
+  ChevronRight,
   Clock3,
   Copy,
   Loader2,
@@ -24,9 +27,11 @@ import { useAuthSession } from "@/lib/useAuthSession";
 import {
   API_BASE_URL,
   CREATE_ORDER_URL,
+  DELIVERY_AVAILABILITY_URL,
   ORDERS_QUOTE_URL,
   VERIFY_PAYMENT_URL,
 } from "@/Serverurls";
+import { createPortal } from "react-dom";
 
 type QuoteItemStatus = "matched" | "needs_confirmation" | "unsupported_unit" | "invalid_quantity" | string;
 
@@ -72,6 +77,15 @@ type OrderQuote = {
   };
 };
 
+type QuotePricing = {
+  subtotal: number;
+  serviceFee: number;
+  deliveryFee: number;
+  total: number;
+  scheduledDeliveryDate?: string;
+  isShifted?: boolean;
+};
+
 function isMatchedStatus(status: QuoteItemStatus) {
   return status === "matched" || status.startsWith("matched_");
 }
@@ -103,6 +117,19 @@ type AlternateDeliveryAddress = {
     source: "google-places";
     placeId: string;
   };
+};
+
+type BlockedDate = {
+  date: string;
+  reason: string | null;
+};
+
+type DeliveryAvailability = {
+  deliveryZoneId?: string;
+  deliveryZoneName?: string;
+  earliestAllowed: string;
+  latestAllowed: string;
+  blockedDates: BlockedDate[];
 };
 
 type CreatedOrder = {
@@ -164,9 +191,29 @@ const quoteEndpoint = `${API_BASE_URL}${ORDERS_QUOTE_URL}`;
 const resolveQuoteItemEndpoint = `${quoteEndpoint}/resolve-item`;
 const createOrderEndpoint = `${API_BASE_URL}${CREATE_ORDER_URL}`;
 const verifyPaymentEndpoint = `${API_BASE_URL}${VERIFY_PAYMENT_URL}`;
-const exampleOrder = "1/2 basket garri, 2 derica rice";
+const deliveryAvailabilityEndpoint = `${API_BASE_URL}${DELIVERY_AVAILABILITY_URL}`;
+const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+
+function toDateKey(year: number, month: number, day: number) {
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+function addDaysToDateKey(dateKey: string, days: number) {
+  const [year, month, day] = dateKey.split("-").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  date.setUTCDate(date.getUTCDate() + days);
+  return toDateKey(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+function getMonthRange(year: number, month: number) {
+  const from = toDateKey(year, month, 1);
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const to = toDateKey(year, month, lastDay);
+  return { from, to };
+}
+const exampleOrder = "1 paint garri, 2 derica rice";
 const SERVICE_FEE_RATE = 0.04;
-const MINIMUM_SERVICE_FEE = 1500;
+const MINIMUM_SERVICE_FEE = 500;
 const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
 function isRecord(value: unknown): value is UnknownRecord {
@@ -183,6 +230,30 @@ function readString(record: UnknownRecord, keys: string[]) {
   }
 
   return "";
+}
+
+function messageFromBody(body: unknown, fallback: string) {
+  if (!isRecord(body)) return fallback;
+
+  if (typeof body.message === "string" && body.message.trim()) {
+    return body.message.trim();
+  }
+
+  if (Array.isArray(body.message)) {
+    const messages = body.message.filter(
+      (item): item is string => typeof item === "string" && Boolean(item.trim()),
+    );
+
+    if (messages.length) {
+      return messages.join(" ");
+    }
+  }
+
+  if (typeof body.error === "string" && body.error.trim()) {
+    return body.error.trim();
+  }
+
+  return fallback;
 }
 
 function parseQuoteItem(value: unknown): QuoteResponseItem | null {
@@ -280,6 +351,31 @@ function parseQuoteResponse(value: unknown): OrderQuote | null {
   };
 }
 
+function parseQuotePricing(value: unknown): QuotePricing | null {
+  if (!isRecord(value) || !isRecord(value.quote)) {
+    return null;
+  }
+
+  const pricing = value.quote;
+  const subtotal = readNumber(pricing, ["subtotal"]);
+  const serviceFee = readNumber(pricing, ["serviceFee"]);
+  const deliveryFee = readNumber(pricing, ["deliveryFee"]);
+  const total = readNumber(pricing, ["total"]);
+
+  if (subtotal === undefined || serviceFee === undefined || deliveryFee === undefined || total === undefined) {
+    return null;
+  }
+
+  return {
+    subtotal,
+    serviceFee,
+    deliveryFee,
+    total,
+    scheduledDeliveryDate: readString(pricing, ["scheduledDeliveryDate"]) || undefined,
+    isShifted: typeof pricing.isShifted === "boolean" ? pricing.isShifted : undefined,
+  };
+}
+
 function formatCurrency(value: number) {
   return new Intl.NumberFormat("en-NG", {
     style: "currency",
@@ -309,6 +405,45 @@ function readNumber(record: UnknownRecord, keys: string[]) {
   }
 
   return undefined;
+}
+
+function toDateOnlyKey(value: string) {
+  return value.slice(0, 10);
+}
+
+function parseDeliveryAvailability(value: unknown): DeliveryAvailability | null {
+  if (!isRecord(value)) return null;
+
+  const earliestAllowedRaw = readString(value, ["earliestAllowed"]);
+  const latestAllowedRaw = readString(value, ["latestAllowed"]);
+
+  if (!earliestAllowedRaw || !latestAllowedRaw) {
+    return null;
+  }
+
+  const earliestAllowed = toDateOnlyKey(earliestAllowedRaw);
+  const latestAllowed = toDateOnlyKey(latestAllowedRaw);
+
+  const zone = isRecord(value.deliveryZone) ? value.deliveryZone : null;
+  const blockedDates = Array.isArray(value.blockedDates)
+    ? value.blockedDates.flatMap((item): BlockedDate[] => {
+        if (!isRecord(item)) return [];
+        const dateRaw = readString(item, ["date"]);
+        if (!dateRaw) return [];
+        return [{
+          date: toDateOnlyKey(dateRaw),
+          reason: typeof item.reason === "string" && item.reason.trim() ? item.reason.trim() : null,
+        }];
+      })
+    : [];
+
+  return {
+    deliveryZoneId: zone ? readString(zone, ["id"]) || undefined : undefined,
+    deliveryZoneName: zone ? readString(zone, ["name"]) || undefined : undefined,
+    earliestAllowed,
+    latestAllowed,
+    blockedDates,
+  };
 }
 
 function parseCreateOrderResponse(value: unknown): CreateOrderResult | null {
@@ -431,6 +566,14 @@ function formatDateTime(value: string) {
       }).format(date);
 }
 
+function formatDateLabel(value: string) {
+  const date = new Date(`${value}T00:00:00Z`);
+
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("en-NG", { dateStyle: "medium", timeZone: "UTC" }).format(date);
+}
+
 function getGoogleAddressPart(
   components: GoogleAddressComponent[],
   type: string,
@@ -459,6 +602,11 @@ export function DashboardCreateOrderModal({
   const [removedItemIndexes, setRemovedItemIndexes] = useState<Set<number>>(new Set());
   const [resolvingIndex, setResolvingIndex] = useState<number | null>(null);
   const [resolveErrors, setResolveErrors] = useState<Record<number, string>>({});
+  const [pricing, setPricing] = useState<QuotePricing | null>(null);
+  const [isPricingLoading, setIsPricingLoading] = useState(false);
+  const [pricingError, setPricingError] = useState("");
+  const [pricingArmed, setPricingArmed] = useState(true);
+  const [pricedRemovalCount, setPricedRemovalCount] = useState(0);
   const [googlePlacesLibrary, setGooglePlacesLibrary] =
     useState<GooglePlacesLibrary | null>(null);
   const [googlePlacesStatus, setGooglePlacesStatus] = useState<
@@ -471,8 +619,20 @@ export function DashboardCreateOrderModal({
   const [alternateDeliveryAddress, setAlternateDeliveryAddress] =
     useState<AlternateDeliveryAddress | null>(null);
   const [addressSearchError, setAddressSearchError] = useState("");
+  const [calendarMonth, setCalendarMonth] = useState(() => {
+    const now = new Date();
+    return { year: now.getFullYear(), month: now.getMonth() };
+  });
+  const [requestedDeliveryDate, setRequestedDeliveryDate] = useState("");
+  const [availability, setAvailability] = useState<DeliveryAvailability | null>(null);
+  const [isLoadingAvailability, setIsLoadingAvailability] = useState(false);
+  const [availabilityError, setAvailabilityError] = useState("");
   const [isSubmittingOrder, setIsSubmittingOrder] = useState(false);
   const [submitOrderError, setSubmitOrderError] = useState("");
+  const [dateConfirmation, setDateConfirmation] = useState<{
+    scheduledDeliveryDate: string;
+    message: string;
+  } | null>(null);
   const [createOrderResult, setCreateOrderResult] =
     useState<CreateOrderResult | null>(null);
   const [copiedAccountNumber, setCopiedAccountNumber] = useState(false);
@@ -485,6 +645,18 @@ export function DashboardCreateOrderModal({
     null,
   );
   const googleRequestIdRef = useRef(0);
+
+  useEffect(() => {
+  if (isOpen) {
+    document.body.style.overflow = "hidden";
+  } else {
+    document.body.style.overflow = "";
+  }
+
+  return () => {
+    document.body.style.overflow = "";
+  };
+}, [isOpen]);
 
   function isItemResolved(item: QuoteResponseItem) {
     return isMatchedStatus(item.status);
@@ -594,13 +766,24 @@ export function DashboardCreateOrderModal({
     );
   }, [quote, removedItemIndexes]);
 
-  const subtotal = useMemo(
+  const localSubtotal = useMemo(
     () => activeItems.reduce((sum, { item }) => sum + (item.totalPrice ?? 0), 0),
     [activeItems],
   );
-  const serviceFee =
-    subtotal > 0 ? Math.max(MINIMUM_SERVICE_FEE, subtotal * SERVICE_FEE_RATE) : 0;
-  const estimatedTotal = subtotal + serviceFee;
+  // Authoritative delivery fee/service fee/total only come from the dedicated pricing
+  // re-quote (POST /orders/quote with the assembled items array) fired once every active
+  // line is resolved. If the user removes an item afterward, that pricing goes stale (no
+  // re-call is made for removals) and we fall back to a local estimate instead.
+  const isPricingStale = pricing !== null && removedItemIndexes.size !== pricedRemovalCount;
+  const hasFreshPricing = pricing !== null && !isPricingStale;
+  const subtotal = hasFreshPricing ? pricing.subtotal : localSubtotal;
+  const serviceFee = hasFreshPricing
+    ? pricing.serviceFee
+    : subtotal > 0
+      ? Math.max(MINIMUM_SERVICE_FEE, subtotal * SERVICE_FEE_RATE)
+      : 0;
+  const deliveryFee = hasFreshPricing ? pricing.deliveryFee : 0;
+  const estimatedTotal = hasFreshPricing ? pricing.total : subtotal + serviceFee + deliveryFee;
   const isMobilePresentation = triggerVariant !== "default";
 
   function openModal() {
@@ -616,11 +799,22 @@ export function DashboardCreateOrderModal({
     setRemovedItemIndexes(new Set());
     setResolvingIndex(null);
     setResolveErrors({});
+    setPricing(null);
+    setIsPricingLoading(false);
+    setPricingError("");
+    setPricingArmed(true);
+    setPricedRemovalCount(0);
     setAddressSearchValue("");
     setAddressSuggestions([]);
     setAlternateDeliveryAddress(null);
     setAddressSearchError("");
+    const now = new Date();
+    setCalendarMonth({ year: now.getFullYear(), month: now.getMonth() });
+    setRequestedDeliveryDate("");
+    setAvailability(null);
+    setAvailabilityError("");
     setSubmitOrderError("");
+    setDateConfirmation(null);
     setCreateOrderResult(null);
     setCopiedAccountNumber(false);
     setCopiedAmount(false);
@@ -773,6 +967,139 @@ export function DashboardCreateOrderModal({
     }
   }
 
+  const loadDeliveryAvailability = useCallback(
+    async (year: number, month: number, deliveryAddress: AlternateDeliveryAddress | null) => {
+      setIsLoadingAvailability(true);
+      setAvailabilityError("");
+
+      try {
+        const { from, to } = getMonthRange(year, month);
+        const response = await authenticatedFetch(deliveryAvailabilityEndpoint, {
+          method: "POST",
+          headers: { Accept: "application/json", "Content-Type": "application/json" },
+          body: JSON.stringify({
+            ...(deliveryAddress ? { deliveryAddress } : {}),
+            from,
+            to,
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            await getApiErrorMessage(response, `Unable to load delivery availability (${response.status}).`),
+          );
+        }
+
+        const parsed = parseDeliveryAvailability((await response.json()) as unknown);
+
+        if (!parsed) {
+          throw new Error("The delivery availability response was not in the expected format.");
+        }
+
+        setAvailability(parsed);
+      } catch (error) {
+        setAvailability(null);
+        setAvailabilityError(
+          error instanceof Error ? error.message : "Unable to load delivery availability.",
+        );
+      } finally {
+        setIsLoadingAvailability(false);
+      }
+    },
+    [],
+  );
+
+  const alternateAddressKey = alternateDeliveryAddress?.googlePlaceId ?? null;
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void loadDeliveryAvailability(calendarMonth.year, calendarMonth.month, alternateDeliveryAddress);
+    // alternateDeliveryAddress is intentionally read fresh rather than added as a dep, so
+    // editing the delivery phone number doesn't re-trigger this — only a new address does.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, calendarMonth.year, calendarMonth.month, alternateAddressKey, loadDeliveryAvailability]);
+
+  useEffect(() => {
+    if (!availability || requestedDeliveryDate) return;
+
+    const blocked = new Set(availability.blockedDates.map((item) => item.date));
+    let cursor = availability.earliestAllowed;
+
+    while (cursor <= availability.latestAllowed) {
+      if (!blocked.has(cursor)) {
+        setRequestedDeliveryDate(cursor);
+        break;
+      }
+      cursor = addDaysToDateKey(cursor, 1);
+    }
+  }, [availability, requestedDeliveryDate]);
+
+  const fetchPricing = useCallback(
+    async (items: OrderQuote["quoteItems"], removalCountAtFetch: number) => {
+      setIsPricingLoading(true);
+      setPricingError("");
+
+      try {
+        const response = await authenticatedFetch(quoteEndpoint, {
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            items,
+            ...(couponCode.trim() ? { couponCode: couponCode.trim() } : {}),
+            ...(alternateDeliveryAddress
+              ? { deliveryAddress: alternateDeliveryAddress }
+              : {}),
+            ...(requestedDeliveryDate ? { requestedDeliveryDate } : {}),
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(
+            await getApiErrorMessage(
+              response,
+              `Unable to calculate delivery and service fees (${response.status}).`,
+            ),
+          );
+        }
+
+        const parsed = parseQuotePricing((await response.json()) as unknown);
+
+        if (!parsed) {
+          throw new Error("The pricing response was not in the expected format.");
+        }
+
+        setPricing(parsed);
+        setPricedRemovalCount(removalCountAtFetch);
+      } catch (error) {
+        setPricingError(
+          error instanceof Error ? error.message : "Unable to calculate delivery and service fees.",
+        );
+      } finally {
+        setIsPricingLoading(false);
+      }
+    },
+    [couponCode, alternateDeliveryAddress, requestedDeliveryDate],
+  );
+
+  // A changed delivery address invalidates any already-fetched pricing (deliveryFee is
+  // zone-dependent and can't be estimated locally), so re-arm the one-time pricing fetch.
+  useEffect(() => {
+    setPricing(null);
+    setPricingError("");
+    setPricedRemovalCount(0);
+    setPricingArmed(true);
+  }, [alternateAddressKey]);
+
+  useEffect(() => {
+    if (!pricingArmed || !effectiveCanProceed || !effectiveQuoteItems.length) return;
+
+    setPricingArmed(false);
+    void fetchPricing(effectiveQuoteItems, removedItemIndexes.size);
+  }, [pricingArmed, effectiveCanProceed, effectiveQuoteItems, removedItemIndexes, fetchPricing]);
+
   async function requestQuote() {
     if (addressSearchValue.trim() && !alternateDeliveryAddress) {
       setQuoteError(
@@ -797,6 +1124,7 @@ export function DashboardCreateOrderModal({
           ...(alternateDeliveryAddress
             ? { deliveryAddress: alternateDeliveryAddress }
             : {}),
+          ...(requestedDeliveryDate ? { requestedDeliveryDate } : {}),
         }),
       });
 
@@ -819,6 +1147,10 @@ export function DashboardCreateOrderModal({
       setRemovedItemIndexes(new Set());
       setResolvingIndex(null);
       setResolveErrors({});
+      setPricing(null);
+      setPricingError("");
+      setPricedRemovalCount(0);
+      setPricingArmed(true);
       setStep("review");
     } catch (error) {
       setQuoteError(error instanceof Error ? error.message : "Unable to quote this order.");
@@ -827,7 +1159,7 @@ export function DashboardCreateOrderModal({
     }
   }
 
-  async function submitOrder() {
+  async function submitOrder(overrideDeliveryDate?: string) {
     if (!quote || !effectiveCanProceed || !effectiveQuoteItems.length) {
       return;
     }
@@ -841,6 +1173,8 @@ export function DashboardCreateOrderModal({
       );
       return;
     }
+
+    const deliveryDate = overrideDeliveryDate ?? requestedDeliveryDate;
 
     setIsSubmittingOrder(true);
     setSubmitOrderError("");
@@ -859,17 +1193,38 @@ export function DashboardCreateOrderModal({
             ? { deliveryAddress: alternateDeliveryAddress }
             : {}),
           ...(orderNote.trim() ? { note: orderNote.trim() } : {}),
+          ...(deliveryDate ? { requestedDeliveryDate: deliveryDate } : {}),
         }),
       });
 
       if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as unknown;
+
+        if (
+          response.status === 422 &&
+          isRecord(body) &&
+          body.code === "DELIVERY_DATE_CONFIRMATION_REQUIRED"
+        ) {
+          const suggestedDate = readString(body, ["scheduledDeliveryDate"]);
+
+          if (suggestedDate) {
+            setDateConfirmation({
+              scheduledDeliveryDate: suggestedDate.slice(0, 10),
+              message: messageFromBody(
+                body,
+                "This order cannot be delivered on the selected date. Confirm the next available delivery date to proceed.",
+              ),
+            });
+            return;
+          }
+        }
+
         throw new Error(
-          await getApiErrorMessage(
-            response,
-            `Unable to submit this order (${response.status}).`,
-          ),
+          messageFromBody(body, `Unable to submit this order (${response.status}).`),
         );
       }
+
+      setDateConfirmation(null);
 
       const result = parseCreateOrderResponse(
         (await response.json()) as unknown,
@@ -889,6 +1244,18 @@ export function DashboardCreateOrderModal({
     } finally {
       setIsSubmittingOrder(false);
     }
+  }
+
+  function acceptSuggestedDeliveryDate() {
+    if (!dateConfirmation) return;
+
+    const nextDate = dateConfirmation.scheduledDeliveryDate;
+    const [year, month] = nextDate.split("-").map(Number);
+
+    setRequestedDeliveryDate(nextDate);
+    setCalendarMonth({ year, month: month - 1 });
+    setDateConfirmation(null);
+    void submitOrder(nextDate);
   }
 
   async function copyAccountNumber(accountNumber: string) {
@@ -994,8 +1361,9 @@ export function DashboardCreateOrderModal({
       </button>
 
       {isOpen ? (
+        createPortal(
         <div
-          className={`fixed inset-0 z-[80] flex justify-center overflow-y-auto bg-black/45 ${
+          className={`fixed inset-0  flex justify-center overflow-y-auto bg-black/45 ${
             isMobilePresentation
               ? "items-stretch p-0 sm:items-center sm:px-4 sm:py-6"
               : "items-start px-4 py-6 sm:items-center"
@@ -1111,6 +1479,30 @@ export function DashboardCreateOrderModal({
                   ) : null}
                 </div>
 
+                <div className="mt-4">
+                  <span className="text-xs font-black uppercase text-black/45">Delivery date</span>
+                  <div className="mt-2">
+                    <OrderDateCalendar
+                      key={`${calendarMonth.year}-${calendarMonth.month}`}
+                      year={calendarMonth.year}
+                      month={calendarMonth.month}
+                      selectedDate={requestedDeliveryDate}
+                      availability={availability}
+                      loading={isLoadingAvailability}
+                      onSelect={setRequestedDeliveryDate}
+                      onNavigate={(year, month) => setCalendarMonth({ year, month })}
+                    />
+                  </div>
+                  {availability?.deliveryZoneName ? (
+                    <p className="mt-2 text-[11px] font-medium text-black/45">
+                      Availability shown for the {availability.deliveryZoneName} delivery zone.
+                    </p>
+                  ) : null}
+                  {availabilityError ? (
+                    <p className="mt-2 text-xs font-bold text-red-700">{availabilityError}</p>
+                  ) : null}
+                </div>
+
                 {quoteError ? (
                   <div className="mt-4 flex gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold text-red-700">
                     <AlertCircle className="mt-0.5 shrink-0" size={17} />
@@ -1123,13 +1515,13 @@ export function DashboardCreateOrderModal({
                     Cancel
                   </button>
                   <button
-                    className="flex h-11 items-center justify-center gap-2 rounded-lg bg-[#f10606] px-5 text-sm font-black text-white shadow-[0_12px_24px_rgba(241,6,6,0.2)] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="mb-20 flex h-11 items-center justify-center gap-2 rounded-lg bg-[#f10606] px-5 text-sm font-black text-white shadow-[0_12px_24px_rgba(241,6,6,0.2)] disabled:cursor-not-allowed disabled:opacity-50"
                     type="button"
                     disabled={!orderText.trim() || isQuoting}
                     onClick={() => void requestQuote()}
                   >
                     {isQuoting ? <Loader2 className="animate-spin" size={17} /> : <Sparkles size={17} />}
-                    {isQuoting ? "Making sense..." : "Make Sense of List"}
+                    {isQuoting ? "Processing List..." : "Process List"}
                   </button>
                 </div>
               </div>
@@ -1334,7 +1726,7 @@ export function DashboardCreateOrderModal({
                   })}
                 </div>
 
-                <div className="mt-4 grid gap-3 rounded-xl bg-[#fbfbfb] p-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="mt-4 grid gap-3 rounded-xl bg-[#fbfbfb] p-4 sm:grid-cols-2 lg:grid-cols-5">
                   <div>
                     <p className="text-xs font-black uppercase text-black/42">Ready items</p>
                     <p className="mt-1 text-lg font-black text-black">{effectiveQuoteItems.length}</p>
@@ -1347,8 +1739,12 @@ export function DashboardCreateOrderModal({
                     <p className="text-xs font-black uppercase text-black/42">Service charge</p>
                     <p className="mt-1 text-lg font-black text-black">{formatCurrency(serviceFee)}</p>
                     <p className="mt-1 text-[10px] font-bold text-black/40">
-                      4% of subtotal, minimum {formatCurrency(MINIMUM_SERVICE_FEE)}
+                      {/* 4% of subtotal, minimum {formatCurrency(MINIMUM_SERVICE_FEE)} */}
                     </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase text-black/42">Delivery fee</p>
+                    <p className="mt-1 text-lg font-black text-black">{formatCurrency(deliveryFee)}</p>
                   </div>
                   <div>
                     <p className="text-xs font-black uppercase text-black/42">Estimated total</p>
@@ -1357,6 +1753,29 @@ export function DashboardCreateOrderModal({
                     </p>
                   </div>
                 </div>
+
+                {isPricingLoading ? (
+                  <p className="mt-2 flex items-center gap-2 text-xs font-bold text-black/45">
+                    <Loader2 className="animate-spin" size={13} />
+                    Calculating delivery and service fees...
+                  </p>
+                ) : pricingError ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs font-bold text-red-700">
+                    <AlertCircle size={13} />
+                    {pricingError}
+                    <button
+                      className="font-black underline underline-offset-2"
+                      type="button"
+                      onClick={() => setPricingArmed(true)}
+                    >
+                      Retry
+                    </button>
+                  </div>
+                ) : !hasFreshPricing ? (
+                  <p className="mt-2 text-xs font-bold text-black/45">
+                    Amounts shown are an estimate and will be finalized once every item is confirmed.
+                  </p>
+                ) : null}
 
                 <label className="mt-4 block">
                   <span className="text-xs font-black uppercase text-black/45">
@@ -1370,7 +1789,40 @@ export function DashboardCreateOrderModal({
                   />
                 </label>
 
-                {submitOrderError ? (
+                {dateConfirmation ? (
+                  <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+                    <div className="flex gap-2">
+                      <Clock3 className="mt-0.5 shrink-0 text-amber-700" size={17} />
+                      <div>
+                        <p className="text-sm font-bold leading-6 text-amber-800">
+                          {dateConfirmation.message}
+                        </p>
+                        <p className="mt-1 text-sm font-black text-black">
+                          Next available date: {formatDateLabel(dateConfirmation.scheduledDeliveryDate)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:justify-end">
+                      <button
+                        className="flex h-10 items-center justify-center rounded-lg border border-black/10 px-4 text-xs font-black text-black/70 transition hover:text-[#f10606] disabled:opacity-45"
+                        disabled={isSubmittingOrder}
+                        type="button"
+                        onClick={() => setDateConfirmation(null)}
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        className="flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f10606] px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-45"
+                        disabled={isSubmittingOrder}
+                        type="button"
+                        onClick={acceptSuggestedDeliveryDate}
+                      >
+                        {isSubmittingOrder ? <Loader2 className="animate-spin" size={14} /> : null}
+                        Use this date & submit
+                      </button>
+                    </div>
+                  </div>
+                ) : submitOrderError ? (
                   <div className="mt-4 flex gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-bold leading-6 text-red-700">
                     <AlertCircle className="mt-0.5 shrink-0" size={17} />
                     {submitOrderError}
@@ -1388,7 +1840,7 @@ export function DashboardCreateOrderModal({
                     Edit List
                   </button>
                   <button
-                    className="flex h-11 items-center justify-center gap-2 rounded-lg bg-[#f10606] px-5 text-sm font-black text-white shadow-[0_12px_24px_rgba(241,6,6,0.2)] disabled:cursor-not-allowed disabled:opacity-45"
+                    className="mb-20 flex h-11 items-center justify-center gap-2 rounded-lg bg-[#f10606] px-5 text-sm font-black text-white shadow-[0_12px_24px_rgba(241,6,6,0.2)] disabled:cursor-not-allowed disabled:opacity-45"
                     type="button"
                     disabled={!effectiveCanProceed || isSubmittingOrder}
                     onClick={() => void submitOrder()}
@@ -1418,7 +1870,7 @@ export function DashboardCreateOrderModal({
                   </p>
                 </div>
 
-                <div className="mt-6 grid gap-3 rounded-xl bg-[#fafafa] p-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="mt-6 grid gap-3 rounded-xl bg-[#fafafa] p-4 sm:grid-cols-2 lg:grid-cols-5">
                   <div>
                     <p className="text-xs font-black uppercase text-black/42">Status</p>
                     <p className="mt-1 font-black capitalize text-black">
@@ -1438,6 +1890,14 @@ export function DashboardCreateOrderModal({
                     <p className="mt-1 font-black text-black">
                       {createOrderResult.order.serviceFee !== undefined
                         ? formatCurrency(createOrderResult.order.serviceFee)
+                        : "Pending"}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-xs font-black uppercase text-black/42">Delivery fee</p>
+                    <p className="mt-1 font-black text-black">
+                      {createOrderResult.order.deliveryFee !== undefined
+                        ? formatCurrency(createOrderResult.order.deliveryFee)
                         : "Pending"}
                     </p>
                   </div>
@@ -1695,9 +2155,144 @@ export function DashboardCreateOrderModal({
               </div>
             ) : null}
           </section>
-        </div>
-      ) : null}
+        </div>,document.body
+        )
+      ) 
+      
+      
+      : null}
     </>
+  );
+}
+
+function OrderDateCalendar({
+  year,
+  month,
+  selectedDate,
+  availability,
+  loading,
+  onSelect,
+  onNavigate,
+}: {
+  year: number;
+  month: number;
+  selectedDate: string;
+  availability: DeliveryAvailability | null;
+  loading: boolean;
+  onSelect: (dateKey: string) => void;
+  onNavigate: (year: number, month: number) => void;
+}) {
+  const [tappedInfo, setTappedInfo] = useState<{ dateKey: string; day: number; message: string } | null>(null);
+
+  const daysInMonth = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const firstWeekday = new Date(Date.UTC(year, month, 1)).getUTCDay();
+  const monthLabel = new Intl.DateTimeFormat("en-NG", { month: "long", year: "numeric" }).format(
+    new Date(Date.UTC(year, month, 1)),
+  );
+  const blockedReasons = new Map(
+    (availability?.blockedDates ?? []).map((item) => [item.date, item.reason ?? "Not available for delivery"]),
+  );
+
+  const cells: Array<{ dateKey: string; day: number } | null> = [];
+  for (let i = 0; i < firstWeekday; i += 1) cells.push(null);
+  for (let day = 1; day <= daysInMonth; day += 1) cells.push({ dateKey: toDateKey(year, month, day), day });
+
+  function goToMonth(offset: number) {
+    const next = new Date(Date.UTC(year, month + offset, 1));
+    onNavigate(next.getUTCFullYear(), next.getUTCMonth());
+  }
+
+  return (
+    <div className="rounded-xl border border-black/10 bg-white p-4">
+      <div className="flex items-center justify-between">
+        <button
+          aria-label="Previous month"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-black/50 transition hover:bg-[#fff0f0] hover:text-[#f10606]"
+          type="button"
+          onClick={() => goToMonth(-1)}
+        >
+          <ChevronLeft size={16} />
+        </button>
+        <p className="flex items-center gap-2 text-sm font-black text-black">
+          <CalendarDays className="text-[#f10606]" size={15} />
+          {monthLabel}
+        </p>
+        <button
+          aria-label="Next month"
+          className="flex h-8 w-8 items-center justify-center rounded-lg text-black/50 transition hover:bg-[#fff0f0] hover:text-[#f10606]"
+          type="button"
+          onClick={() => goToMonth(1)}
+        >
+          <ChevronRight size={16} />
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="mt-3 grid grid-cols-7 gap-1">
+          {Array.from({ length: 35 }).map((_, index) => (
+            <div className="h-9 animate-pulse rounded-lg bg-black/[0.04]" key={index} />
+          ))}
+        </div>
+      ) : (
+        <>
+          <div className="mt-3 grid grid-cols-7 gap-1 text-center text-[10px] font-black uppercase text-black/40">
+            {WEEKDAY_LABELS.map((label) => (
+              <span key={label}>{label}</span>
+            ))}
+          </div>
+          <div className="mt-1 grid grid-cols-7 gap-1">
+            {cells.map((cell, index) => {
+              if (!cell) return <span key={`empty-${index}`} />;
+
+              const blockedReason = blockedReasons.get(cell.dateKey);
+              const isBlocked = blockedReason !== undefined;
+              const outOfRange = Boolean(
+                (availability && cell.dateKey < availability.earliestAllowed) ||
+                  (availability && cell.dateKey > availability.latestAllowed),
+              );
+              const isUnavailable = isBlocked || outOfRange || !availability;
+              const isSelected = cell.dateKey === selectedDate;
+              const unavailableMessage = isBlocked ? blockedReason : "Not available for delivery.";
+
+              return (
+                <button
+                  aria-disabled={isUnavailable}
+                  className={`h-9 rounded-lg text-xs font-bold transition ${
+                    isSelected
+                      ? "bg-[#f10606] text-white"
+                      : isUnavailable
+                        ? "cursor-not-allowed text-black/25 line-through"
+                        : "text-black/70 hover:bg-[#fff0f0] hover:text-[#f10606]"
+                  }`}
+                  key={cell.dateKey}
+                  title={isUnavailable ? unavailableMessage : undefined}
+                  type="button"
+                  onClick={() => {
+                    if (isUnavailable) {
+                      setTappedInfo((current) =>
+                        current?.dateKey === cell.dateKey
+                          ? null
+                          : { dateKey: cell.dateKey, day: cell.day, message: unavailableMessage ?? "" },
+                      );
+                      return;
+                    }
+                    setTappedInfo(null);
+                    onSelect(cell.dateKey);
+                  }}
+                >
+                  {cell.day}
+                </button>
+              );
+            })}
+          </div>
+          {tappedInfo ? (
+            <p className="mt-3 rounded-lg bg-[#fff5f5] px-3 py-2 text-xs font-bold text-black/60">
+              {monthLabel.split(" ")[0]} {tappedInfo.day}: {tappedInfo.message}
+            </p>
+          ) : null}
+        </>
+      )}
+    </div>
   );
 }
 

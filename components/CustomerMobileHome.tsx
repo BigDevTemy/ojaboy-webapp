@@ -43,14 +43,17 @@ const orderHistoryEndpoint = `${API_BASE_URL}${ORDER_HISTORY_URL}`;
 const unreadNotificationsEndpoint = `${API_BASE_URL}${NOTIFICATIONS_URL}/unread-count`;
 
 const quickCategories = [
-  { label: "Vegetables", image: "/products/tomatoes-basket.png", tone: "bg-emerald-50" },
-  { label: "Tomatoes", image: "/products/tomatoes-basket.png", tone: "bg-red-50" },
-  { label: "Grains", image: "/products/rice.png", tone: "bg-amber-50" },
-  { label: "Beans", image: "/products/beans.png", tone: "bg-orange-50" },
-  { label: "Cooking Oil", image: "/products/palm-oil.png", tone: "bg-yellow-50" },
+  { label: "Grains", image: "/products/grains.png", tone: "bg-emerald-50" },
+  { label: "Tubers", image: "/products/tubers.png", tone: "bg-red-50" },
+  { label: "Legumes", image: "/products/legumes.png", tone: "bg-amber-50" },
+  { label: "Vegetables", image: "/products/vegetables.png", tone: "bg-orange-50" },
+  { label: "Meat", image: "/products/meat.png", tone: "bg-yellow-50" },
+  { label: "Frozen Foods", image: "/products/frozen-foods.png", tone: "bg-yellow-50" },
+  { label: "Oil", image: "/products/palm-oil.png", tone: "bg-yellow-50" },
+  { label: "Beverages", image: "/products/beverages.png", tone: "bg-yellow-50" },
 ] as const;
 
-const marketWatch = [
+const marketWatchData = [
   {
     name: "Tomatoes",
     price: "N18,500",
@@ -228,7 +231,7 @@ export function CustomerMobileHome() {
   const [isOrderLoading, setIsOrderLoading] = useState(true);
   const [orderError, setOrderError] = useState("");
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
-
+  const [marketWatch, setMarketWatch] = useState(marketWatchData);
   const loadRecentOrder = useCallback(async () => {
     setIsOrderLoading(true);
     setOrderError("");
@@ -328,6 +331,7 @@ export function CustomerMobileHome() {
 
   const defaultAddress =
     session?.user.defaultAddress?.formattedAddress || "Your default delivery address";
+  const defaultAddressZoneName = session?.user.defaultAddress?.deliveryZone?.name;
 
   return (
     <div className="space-y-6 pb-4">
@@ -340,6 +344,11 @@ export function CustomerMobileHome() {
           <p className="mt-1 line-clamp-1 text-xs font-black text-black">
             {defaultAddress}
           </p>
+          {defaultAddressZoneName ? (
+            <p className="mt-0.5 line-clamp-1 text-[10px] font-bold text-black/45">
+              {defaultAddressZoneName} delivery zone
+            </p>
+          ) : null}
         </div>
         <Link
           aria-label="Notifications"
@@ -395,16 +404,16 @@ export function CustomerMobileHome() {
 
       <section>
         <div className="mb-3 flex items-center justify-between">
-          <h3 className="text-sm font-black text-black">Quick Categories</h3>
+          <h3 className="text-sm font-black text-black">Categories</h3>
           <Link className="text-[11px] font-black text-[#f10606]" href="/dashboard/market-prices">
-            See all
+            {/* See all */}
           </Link>
         </div>
         <div className="scrollbar-hide -mx-1 flex gap-4 overflow-x-auto px-1 pb-1 sm:grid sm:grid-cols-5 sm:gap-4 sm:overflow-visible lg:gap-5">
           {quickCategories.map((category) => (
             <Link
               className="w-24 shrink-0 text-center sm:w-full"
-              href="/dashboard/market-prices"
+              href="/dashboard"
               key={category.label}
             >
               <span className={`relative mx-auto flex h-20 w-20 overflow-hidden rounded-2xl sm:h-24 sm:w-24 lg:h-28 lg:w-28 ${category.tone}`}>

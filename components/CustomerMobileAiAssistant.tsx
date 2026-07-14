@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { Bot, Headphones, Send } from "lucide-react";
+import { Bot, Headphones, Send, X } from "lucide-react";
 import { AgentMessageContent } from "@/components/AgentMessageContent";
 import { askAgent } from "@/lib/agentChat";
 
@@ -10,6 +10,13 @@ type ChatMessage = {
   role: "assistant" | "user";
   text: string;
 };
+
+type QueuedMessage = {
+  id: string;
+  text: string;
+};
+
+const MAX_QUEUE_SIZE = 5;
 
 const starterMessages: ChatMessage[] = [
   {
@@ -29,44 +36,90 @@ export function CustomerMobileAiAssistant() {
   const [question, setQuestion] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [queue, setQueue] = useState<QueuedMessage[]>([]);
+  const queueRef = useRef<QueuedMessage[]>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [isLoading, messages]);
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const trimmedQuestion = question.trim();
+  function updateQueue(next: QueuedMessage[]) {
+    queueRef.current = next;
+    setQueue(next);
+  }
 
-    if (!trimmedQuestion || isLoading) {
+  function enqueue(text: string) {
+    updateQueue([...queueRef.current, { id: crypto.randomUUID(), text }]);
+  }
+
+  function removeFromQueue(id: string) {
+    updateQueue(queueRef.current.filter((item) => item.id !== id));
+  }
+
+  function loadFromQueue(id: string) {
+    const item = queueRef.current.find((queued) => queued.id === id);
+    if (!item) {
       return;
     }
+    setQuestion(item.text);
+    removeFromQueue(id);
+  }
 
+  async function sendToEndpoint(text: string) {
     setMessages((current) => [
       ...current,
-      { id: crypto.randomUUID(), role: "user", text: trimmedQuestion },
+      { id: crypto.randomUUID(), role: "user", text },
     ]);
-    setQuestion("");
     setError("");
     setIsLoading(true);
 
     try {
-      const response = await askAgent(trimmedQuestion);
+      const response = await askAgent(text);
       setMessages((current) => [
         ...current,
         { id: crypto.randomUUID(), role: "assistant", text: response.answer },
       ]);
+      setIsLoading(false);
+
+      const [next, ...rest] = queueRef.current;
+      if (next) {
+        updateQueue(rest);
+        void sendToEndpoint(next.text);
+      }
     } catch (requestError) {
       setError(
         requestError instanceof Error
           ? requestError.message
           : "The agent is unavailable. Please try again.",
       );
-    } finally {
       setIsLoading(false);
     }
   }
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const trimmedQuestion = question.trim();
+
+    if (!trimmedQuestion) {
+      return;
+    }
+
+    if (isLoading) {
+      if (queueRef.current.length >= MAX_QUEUE_SIZE) {
+        setError(`Queue is full (${MAX_QUEUE_SIZE} messages). Remove one to add more.`);
+        return;
+      }
+      enqueue(trimmedQuestion);
+      setQuestion("");
+      return;
+    }
+
+    setQuestion("");
+    await sendToEndpoint(trimmedQuestion);
+  }
+
+  const isQueueFull = queue.length >= MAX_QUEUE_SIZE;
 
   return (
     <section className="flex h-[calc(100dvh-9.75rem)] min-h-[28rem] flex-col bg-[#fffafa]">
@@ -119,6 +172,33 @@ export function CustomerMobileAiAssistant() {
         <div ref={messagesEndRef} />
       </div>
 
+      {queue.length > 0 ? (
+        <div className="max-h-32 shrink-0 overflow-y-auto border-t border-black/[0.08] bg-[#fafafa]">
+          {queue.map((item) => (
+            <div
+              className="flex items-center gap-2 border-b border-black/[0.05] px-4 py-2 last:border-b-0"
+              key={item.id}
+            >
+              <button
+                type="button"
+                className="min-w-0 flex-1 truncate text-left text-xs font-semibold text-black/60 hover:text-black/80"
+                onClick={() => loadFromQueue(item.id)}
+              >
+                {item.text}
+              </button>
+              <button
+                type="button"
+                className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-black/35 hover:bg-black/5 hover:text-red-600"
+                aria-label="Remove queued message"
+                onClick={() => removeFromQueue(item.id)}
+              >
+                <X size={13} />
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <form
         className="flex items-center gap-3 border-t border-black/[0.08] bg-white p-4"
         onSubmit={handleSubmit}
@@ -129,13 +209,12 @@ export function CustomerMobileAiAssistant() {
           aria-label="Type your message"
           value={question}
           onChange={(event) => setQuestion(event.target.value)}
-          disabled={isLoading}
         />
         <button
           className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#f10606] text-white shadow-[0_12px_24px_rgba(241,6,6,0.22)] disabled:cursor-not-allowed disabled:opacity-60"
           type="submit"
           aria-label="Send message"
-          disabled={isLoading || !question.trim()}
+          disabled={!question.trim() || (isLoading && isQueueFull)}
         >
           <Send size={18} />
         </button>

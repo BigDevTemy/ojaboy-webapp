@@ -28,6 +28,7 @@ import {
   Store,
   Ticket,
   Users,
+  TrendingUp,
   X,
 } from "lucide-react";
 
@@ -37,6 +38,7 @@ const navItems = [
   { label: "Products", icon: PackageSearch, href: "/dashboard/products" },
   { label: "Product Categories", icon: Shapes, href: "/dashboard/product-categories" },
   { label: "Market Prices", icon: LineChart, href: "/dashboard/market-prices" },
+  { label: "Market Trends", icon: TrendingUp , href: "/dashboard/market-trends" },
   { label: "Buy Prices", icon: BadgeDollarSign, href: "/dashboard/buy-prices" },
   { label: "Markets", icon: Store, href: "/dashboard/markets" },
   { label: "Delivery Coverage", icon: MapPinned, href: "/dashboard/delivery-coverage" },

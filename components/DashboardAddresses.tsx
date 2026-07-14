@@ -79,7 +79,7 @@ const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 const emptyAddressForm: AddressForm = {
   label: "Home",
   recipientName: "",
-  phoneNumber: "+234",
+  phoneNumber: "",
   formattedAddress: "",
   addressLine1: "",
   addressLine2: "",
@@ -470,6 +470,23 @@ export function DashboardAddresses({
   }, []);
 
   useEffect(() => {
+  const isAnyModalOpen =
+    Boolean(selectedAddressId) ||
+    isAddAddressOpen ||
+    Boolean(addressToDelete);
+
+  if (isAnyModalOpen) {
+    document.body.style.overflow = "hidden";
+  } else {
+    document.body.style.overflow = "";
+  }
+
+  return () => {
+    document.body.style.overflow = "";
+  };
+}, [selectedAddressId, isAddAddressOpen, addressToDelete]);
+
+  useEffect(() => {
     let isCancelled = false;
 
     void fetchAddresses()
@@ -746,6 +763,11 @@ export function DashboardAddresses({
       setSelectedAddress((currentAddress) =>
         currentAddress ? { ...currentAddress, isDefault: currentAddress.id === addressId } : null,
       );
+
+      const newDefaultAddress = addresses.find((address) => address.id === addressId);
+      if (newDefaultAddress) {
+        saveDefaultAddressToSession(newDefaultAddress);
+      }
     } catch (requestError) {
       setMutationError(
         requestError instanceof Error
@@ -929,22 +951,30 @@ export function DashboardAddresses({
 
                 <div className="mt-5 grid grid-cols-2 gap-2 border-t border-black/10 pt-4">
                   <button
-                    className="flex h-10 items-center justify-center gap-2 rounded-lg border border-black/10 text-xs font-black text-black/65 transition hover:text-[#f10606]"
+                    className={`flex h-10 items-center justify-center gap-2 rounded-lg border border-black/10 text-xs font-black text-black/65 transition hover:text-[#f10606] ${
+                      address.isDefault ? "col-span-2" : ""
+                    }`}
                     type="button"
                     onClick={() => void openAddressDetails(address.id)}
                   >
                     <Eye size={15} />
                     View
                   </button>
-                  <button
-                    className="flex h-10 items-center justify-center gap-2 rounded-lg border border-red-200 text-xs font-black text-red-600 transition hover:bg-red-50 disabled:opacity-45"
-                    disabled={isBusy}
-                    type="button"
-                    onClick={() => setAddressToDelete(address)}
-                  >
-                    <Trash2 size={15} />
-                    Delete
-                  </button>
+                  {
+                    !address.isDefault ? (
+                      <button
+                        className="flex h-10 items-center justify-center gap-2 rounded-lg border border-red-200 text-xs font-black text-red-600 transition hover:bg-red-50 disabled:opacity-45"
+                        disabled={isBusy}
+                        type="button"
+                        onClick={() => setAddressToDelete(address)}
+                      >
+                        <Trash2 size={15} />
+                        Delete
+                      </button>
+                      
+                    ): ''
+                  }
+                  
                   {!address.isDefault ? (
                     <button
                       className="col-span-2 flex h-10 items-center justify-center gap-2 rounded-lg bg-[#f10606] text-xs font-black text-white disabled:opacity-50"
@@ -1023,7 +1053,7 @@ export function DashboardAddresses({
                 </button>
               </div>
             ) : selectedAddress ? (
-              <div className="space-y-4 p-5">
+              <div className="space-y-4 p-5 overflow-y-auto max-h-[80vh]">
                 {selectedAddress.isDefault ? (
                   <span className="inline-flex items-center gap-2 rounded-full bg-[#f10606] px-3 py-1 text-xs font-black text-white">
                     <CheckCircle2 size={14} />

@@ -1,5 +1,5 @@
-export const API_BASE_URL = "http://localhost:5000/";
-//export const API_BASE_URL = "https://ojaboy-backend-1092974911193.us-central1.run.app/";
+//export const API_BASE_URL = "http://localhost:5000/";
+export const API_BASE_URL = "https://ojaboy-backend-1092974911193.us-central1.run.app/";
 
 export const LOGIN_URL = "auth/login";
 export const REGISTER_URL = "auth/register";
@@ -17,6 +17,7 @@ export const ORDER_HISTORY_URL = "orders/mine";
 export const ORDER_DETAILS_URL = "orders/mine";
 export const ORDERS_QUOTE_URL = "orders/quote";
 export const CREATE_ORDER_URL = "orders";
+export const DELIVERY_AVAILABILITY_URL = "orders/delivery-availability";
 export const VERIFY_PAYMENT_URL = "payments/verify";
 export const ADDRESSES_URL = "addresses";
 export const WISHLISTS_URL = "wishlists";
@@ -30,9 +31,11 @@ export const PRODUCT_OFFERINGS_URL = "product-offerings";
 export const BUY_PRICES_URL = "buy-prices";
 export const DELIVERY_ZONES_URL = "logistics/delivery-zones";
 export const DELIVERY_AREAS_URL = "logistics/delivery-areas";
+export const DELIVERY_BLACKOUTS_URL = "logistics/delivery-blackouts";
 export const PRICE_ALERTS_URL = "price-alerts";
 export const NOTIFICATIONS_URL = "notifications";
 export const MARKETS_URL = "markets";
+export const DAILY_MARKET_TRENDS = "market-analysis/latest";
 export const MARKET_PRICES_URL = "market-prices";
 export const USERS_URL = "users";
 export const TICKETS_URL = "tickets";

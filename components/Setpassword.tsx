@@ -33,10 +33,11 @@ function isSignupVerificationResponse(
   );
 }
 
-export function SignupForm() {
+export function SetPasswordForm() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+   const [cpassword, setCpassword] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [verification, setVerification] =
@@ -85,6 +86,7 @@ export function SignupForm() {
 
       setVerification(result);
       setPassword("");
+      setCpassword("");
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Signup failed. Please try again.");
     } finally {
@@ -134,44 +136,16 @@ export function SignupForm() {
   return (
     <form className="p-6 sm:p-8 lg:p-10" onSubmit={handleSubmit}>
       <div className="mb-7">
-        <p className="mb-2 text-sm font-black uppercase text-[#f10606]">Get started</p>
-        <h2 className="text-3xl font-black tracking-normal text-black">Set up your profile</h2>
+        <p className="mb-2 text-sm font-black uppercase text-[#f10606]">Password Reset</p>
+        <h2 className="text-3xl font-black tracking-normal text-black">Set your profile password</h2>
         <p className="mt-2 text-sm font-medium text-black/55">Use your details so Ojaboy can personalize markets, alerts, and delivery.</p>
       </div>
 
-      <GoogleSsoButton />
-      <div className="my-4 flex items-center gap-3">
-        <span className="h-px flex-1 bg-black/10" />
-        <span className="text-xs font-bold uppercase text-black/40">or</span>
-        <span className="h-px flex-1 bg-black/10" />
-      </div>
+      
 
       <div className="grid gap-4 sm:grid-cols-2">
-        <label className="block sm:col-span-2">
-          <span className="text-xs font-black uppercase text-black/45">Full Name</span>
-          <input
-            className="mt-2 h-12 w-full rounded-lg border border-black/10 px-4 text-sm font-bold text-black outline-none placeholder:text-black/35 focus:border-[#f10606]/40 disabled:cursor-not-allowed disabled:opacity-60"
-            placeholder="John Doe"
-            autoComplete="name"
-            value={fullName}
-            onChange={(event) => setFullName(event.target.value)}
-            disabled={isLoading}
-            required
-          />
-        </label>
-        <label className="block sm:col-span-2">
-          <span className="text-xs font-black uppercase text-black/45">Email Address</span>
-          <input
-            className="mt-2 h-12 w-full rounded-lg border border-black/10 px-4 text-sm font-bold text-black outline-none placeholder:text-black/35 focus:border-[#f10606]/40 disabled:cursor-not-allowed disabled:opacity-60"
-            placeholder="you@example.com"
-            type="email"
-            autoComplete="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            disabled={isLoading}
-            required
-          />
-        </label>
+        
+
         <label className="block sm:col-span-2">
           <span className="text-xs font-black uppercase text-black/45">Password</span>
           <input
@@ -181,6 +155,20 @@ export function SignupForm() {
             autoComplete="new-password"
             value={password}
             onChange={(event) => setPassword(event.target.value)}
+            disabled={isLoading}
+            required
+          />
+        </label>
+       
+        <label className="block sm:col-span-2">
+          <span className="text-xs font-black uppercase text-black/45">Confirm Password</span>
+          <input
+            className="mt-2 h-12 w-full rounded-lg border border-black/10 px-4 text-sm font-bold text-black outline-none placeholder:text-black/35 focus:border-[#f10606]/40 disabled:cursor-not-allowed disabled:opacity-60"
+            placeholder="Confirm your password"
+            type="password"
+            autoComplete="confirm-password"
+            value={cpassword}
+            onChange={(event) => setCpassword(event.target.value)}
             disabled={isLoading}
             required
           />
@@ -201,12 +189,10 @@ export function SignupForm() {
         type="submit"
         disabled={isLoading}
       >
-        {isLoading ? "Creating account..." : "Create Account"}
+        {isLoading ? "Setting password..." : "Set Password"}
       </button>
 
-      <p className="mt-5 text-center text-sm font-medium text-black/55">
-        Already have an account? <Link className="font-black text-[#f10606]" href="/login">Log in</Link>
-      </p>
+     
     </form>
   );
 }

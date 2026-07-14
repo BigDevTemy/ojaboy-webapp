@@ -9,9 +9,9 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "OjaboY | AI Market Price Intelligence",
+  title: "Ojaboy | AI Market Price Intelligence",
   description:
-    "Ask OjaboY about Nigerian market prices, compare markets, and shop smarter.",
+    "Ask Ojaboy about Nigerian market prices, compare markets, and shop smarter.",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,

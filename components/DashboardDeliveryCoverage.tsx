@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  CalendarOff,
   Eye,
   LoaderCircle,
   MapPinned,
@@ -15,6 +16,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react
 import {
   API_BASE_URL,
   DELIVERY_AREAS_URL,
+  DELIVERY_BLACKOUTS_URL,
   DELIVERY_ZONES_URL,
 } from "@/Serverurls";
 import { authenticatedFetch } from "@/lib/authClient";
@@ -26,6 +28,9 @@ type DeliveryZone = {
   description?: string;
   deliveryCost: number;
   isActive: boolean;
+  cutoffTime?: string;
+  sameDayAllowed: boolean;
+  nextAvailableOffsetDays: number;
   createdAt?: string;
   updatedAt?: string;
 };
@@ -49,6 +54,9 @@ type ZoneForm = {
   description: string;
   deliveryCost: string;
   isActive: boolean;
+  cutoffTime: string;
+  sameDayAllowed: boolean;
+  nextAvailableOffsetDays: string;
 };
 
 type AreaForm = {
@@ -61,13 +69,37 @@ type AreaForm = {
   isActive: boolean;
 };
 
+type DeliveryBlackout = {
+  id: string;
+  date: string;
+  deliveryZoneId?: string;
+  deliveryZoneName?: string;
+  startTime?: string;
+  endTime?: string;
+  reason?: string;
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+type BlackoutForm = {
+  date: string;
+  deliveryZoneId: string;
+  startTime: string;
+  endTime: string;
+  reason: string;
+};
+
 const zonesEndpoint = `${API_BASE_URL}${DELIVERY_ZONES_URL}`;
 const areasEndpoint = `${API_BASE_URL}${DELIVERY_AREAS_URL}`;
+const blackoutsEndpoint = `${API_BASE_URL}${DELIVERY_BLACKOUTS_URL}`;
 const emptyZoneForm: ZoneForm = {
   name: "",
   description: "",
   deliveryCost: "",
   isActive: true,
+  cutoffTime: "",
+  sameDayAllowed: true,
+  nextAvailableOffsetDays: "1",
 };
 const emptyAreaForm: AreaForm = {
   deliveryZoneId: "",
@@ -78,6 +110,20 @@ const emptyAreaForm: AreaForm = {
   country: "Nigeria",
   isActive: true,
 };
+const emptyBlackoutForm: BlackoutForm = {
+  date: "",
+  deliveryZoneId: "",
+  startTime: "",
+  endTime: "",
+  reason: "",
+};
+
+function toDateInputValue(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -122,6 +168,9 @@ function parseZone(value: unknown): DeliveryZone | null {
     description: readText(value, ["description"]) || undefined,
     deliveryCost,
     isActive: typeof value.isActive === "boolean" ? value.isActive : true,
+    cutoffTime: readText(value, ["cutoffTime"]) || undefined,
+    sameDayAllowed: typeof value.sameDayAllowed === "boolean" ? value.sameDayAllowed : true,
+    nextAvailableOffsetDays: readNumber(value, ["nextAvailableOffsetDays"]) ?? 1,
     createdAt: readText(value, ["createdAt"]) || undefined,
     updatedAt: readText(value, ["updatedAt"]) || undefined,
   };
@@ -154,6 +203,34 @@ function parseArea(value: unknown): DeliveryArea | null {
     state: readText(value, ["state"]),
     country: readText(value, ["country"]) || "Nigeria",
     isActive: typeof value.isActive === "boolean" ? value.isActive : true,
+    createdAt: readText(value, ["createdAt"]) || undefined,
+    updatedAt: readText(value, ["updatedAt"]) || undefined,
+  };
+}
+
+function parseBlackout(value: unknown): DeliveryBlackout | null {
+  if (!isRecord(value)) return null;
+  const zone = isRecord(value.deliveryZone)
+    ? value.deliveryZone
+    : isRecord(value.zone)
+      ? value.zone
+      : null;
+  const id = readText(value, ["id"]);
+  const date = readText(value, ["date"]);
+  if (!id || !date) return null;
+  const deliveryZoneId =
+    readText(value, ["deliveryZoneId", "zoneId"]) || (zone ? readText(zone, ["id"]) : "");
+  return {
+    id,
+    date,
+    deliveryZoneId: deliveryZoneId || undefined,
+    deliveryZoneName:
+      (zone ? readText(zone, ["name"]) : "") ||
+      readText(value, ["deliveryZoneName", "zoneName"]) ||
+      undefined,
+    startTime: readText(value, ["startTime"]) || undefined,
+    endTime: readText(value, ["endTime"]) || undefined,
+    reason: readText(value, ["reason"]) || undefined,
     createdAt: readText(value, ["createdAt"]) || undefined,
     updatedAt: readText(value, ["updatedAt"]) || undefined,
   };
@@ -195,16 +272,24 @@ function formatDate(value?: string) {
 export function DashboardDeliveryCoverage() {
   const session = useAuthSession();
   const isCustomer = session?.user.role?.trim().toLowerCase() === "user";
-  const [activeTab, setActiveTab] = useState<"zones" | "areas">("zones");
+  const [activeTab, setActiveTab] = useState<"zones" | "areas" | "blackouts">("zones");
   const [zones, setZones] = useState<DeliveryZone[]>([]);
   const [areas, setAreas] = useState<DeliveryArea[]>([]);
+  const [blackouts, setBlackouts] = useState<DeliveryBlackout[]>([]);
   const [search, setSearch] = useState("");
+  const [blackoutZoneFilter, setBlackoutZoneFilter] = useState("");
+  const [blackoutFrom, setBlackoutFrom] = useState(() => toDateInputValue(new Date()));
+  const [blackoutTo, setBlackoutTo] = useState(() =>
+    toDateInputValue(new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)),
+  );
   const [zoneForm, setZoneForm] = useState<ZoneForm>(emptyZoneForm);
   const [areaForm, setAreaForm] = useState<AreaForm>(emptyAreaForm);
+  const [blackoutForm, setBlackoutForm] = useState<BlackoutForm>(emptyBlackoutForm);
   const [editingId, setEditingId] = useState("");
-  const [formType, setFormType] = useState<"zone" | "area" | null>(null);
+  const [formType, setFormType] = useState<"zone" | "area" | "blackout" | null>(null);
   const [selectedZone, setSelectedZone] = useState<DeliveryZone | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isBlackoutsLoading, setIsBlackoutsLoading] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [busyAction, setBusyAction] = useState("");
   const [error, setError] = useState("");
@@ -252,6 +337,34 @@ export function DashboardDeliveryCoverage() {
     return () => clearTimeout(timer);
   }, [loadCoverage]);
 
+  const loadBlackouts = useCallback(async () => {
+    if (isCustomer) return;
+    setIsBlackoutsLoading(true);
+    setError("");
+    try {
+      const params = new URLSearchParams();
+      if (blackoutZoneFilter) params.set("deliveryZoneId", blackoutZoneFilter);
+      if (blackoutFrom) params.set("from", blackoutFrom);
+      if (blackoutTo) params.set("to", blackoutTo);
+      const url = params.toString() ? `${blackoutsEndpoint}?${params}` : blackoutsEndpoint;
+      const response = await authenticatedFetch(url, { headers: { Accept: "application/json" } });
+      const body = (await response.json().catch(() => null)) as unknown;
+      if (!response.ok) {
+        throw new Error(responseMessage(body, `Unable to load delivery blackouts (${response.status}).`));
+      }
+      setBlackouts(parseList(body, ["deliveryBlackouts", "blackouts", "results"], parseBlackout));
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to load delivery blackouts.");
+    } finally {
+      setIsBlackoutsLoading(false);
+    }
+  }, [blackoutFrom, blackoutTo, blackoutZoneFilter, isCustomer]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => void loadBlackouts(), 0);
+    return () => clearTimeout(timer);
+  }, [loadBlackouts]);
+
   const filteredZones = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return zones;
@@ -295,6 +408,9 @@ export function DashboardDeliveryCoverage() {
       description: zone.description ?? "",
       deliveryCost: String(zone.deliveryCost),
       isActive: zone.isActive,
+      cutoffTime: zone.cutoffTime ?? "",
+      sameDayAllowed: zone.sameDayAllowed,
+      nextAvailableOffsetDays: String(zone.nextAvailableOffsetDays),
     });
     setFormType("zone");
     setError("");
@@ -325,10 +441,31 @@ export function DashboardDeliveryCoverage() {
     setNotice("");
   }
 
+  function openCreateBlackout() {
+    setEditingId("");
+    setBlackoutForm(emptyBlackoutForm);
+    setFormType("blackout");
+    setError("");
+    setNotice("");
+  }
+
   async function submitZone(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!zoneForm.name.trim() || zoneForm.deliveryCost.trim() === "" || Number(zoneForm.deliveryCost) < 0) {
-      setError("Zone name and a valid delivery cost are required.");
+    const cutoffTime = zoneForm.cutoffTime.trim();
+    const cutoffValid = !cutoffTime || /^([01]\d|2[0-3]):[0-5]\d$/.test(cutoffTime);
+    const offsetDaysRaw = zoneForm.nextAvailableOffsetDays.trim();
+    const offsetDays = offsetDaysRaw === "" ? 1 : Number(offsetDaysRaw);
+    if (
+      !zoneForm.name.trim() ||
+      zoneForm.deliveryCost.trim() === "" ||
+      Number(zoneForm.deliveryCost) <= 0 ||
+      !cutoffValid ||
+      !Number.isInteger(offsetDays) ||
+      offsetDays < 1
+    ) {
+      setError(
+        "Zone name, a delivery cost greater than 0, a valid cutoff time (HH:mm), and a next-available offset of at least 1 day are required.",
+      );
       return;
     }
     setIsSubmitting(true);
@@ -344,6 +481,9 @@ export function DashboardDeliveryCoverage() {
             ...(zoneForm.description.trim() ? { description: zoneForm.description.trim() } : {}),
             deliveryCost: Number(zoneForm.deliveryCost),
             isActive: zoneForm.isActive,
+            cutoffTime: cutoffTime || null,
+            sameDayAllowed: zoneForm.sameDayAllowed,
+            nextAvailableOffsetDays: offsetDays,
           }),
         },
       );
@@ -410,6 +550,45 @@ export function DashboardDeliveryCoverage() {
     }
   }
 
+  async function submitBlackout(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const startTime = blackoutForm.startTime.trim();
+    const endTime = blackoutForm.endTime.trim();
+    const startValid = !startTime || timePattern.test(startTime);
+    const endValid = !endTime || timePattern.test(endTime);
+    if (!blackoutForm.date.trim() || !startValid || !endValid) {
+      setError("A blackout date is required, and start/end times must be valid HH:mm values.");
+      return;
+    }
+    setIsSubmitting(true);
+    setError("");
+    try {
+      const response = await authenticatedFetch(blackoutsEndpoint, {
+        method: "POST",
+        headers: { Accept: "application/json", "Content-Type": "application/json" },
+        body: JSON.stringify({
+          date: blackoutForm.date.trim(),
+          ...(blackoutForm.deliveryZoneId ? { deliveryZoneId: blackoutForm.deliveryZoneId } : {}),
+          ...(startTime ? { startTime } : {}),
+          ...(endTime ? { endTime } : {}),
+          ...(blackoutForm.reason.trim() ? { reason: blackoutForm.reason.trim().slice(0, 255) } : {}),
+        }),
+      });
+      const body = (await response.json().catch(() => null)) as unknown;
+      if (!response.ok) {
+        throw new Error(responseMessage(body, `Unable to create delivery blackout (${response.status}).`));
+      }
+      setFormType(null);
+      setNotice("Delivery blackout created.");
+      await loadBlackouts();
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Unable to create delivery blackout.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
   async function loadZoneDetails(id: string) {
     setBusyAction(`view-zone-${id}`);
     setError("");
@@ -433,21 +612,23 @@ export function DashboardDeliveryCoverage() {
     }
   }
 
-  async function removeItem(type: "zone" | "area", id: string, name: string) {
+  async function removeItem(type: "zone" | "area" | "blackout", id: string, name: string) {
     if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
     setBusyAction(`delete-${type}-${id}`);
     setError("");
+    const endpoint = type === "zone" ? zonesEndpoint : type === "area" ? areasEndpoint : blackoutsEndpoint;
     try {
-      const response = await authenticatedFetch(
-        `${type === "zone" ? zonesEndpoint : areasEndpoint}/${id}`,
-        { method: "DELETE", headers: { Accept: "application/json" } },
-      );
+      const response = await authenticatedFetch(`${endpoint}/${id}`, {
+        method: "DELETE",
+        headers: { Accept: "application/json" },
+      });
       const body = (await response.json().catch(() => null)) as unknown;
       if (!response.ok) {
         throw new Error(responseMessage(body, `Unable to delete delivery ${type} (${response.status}).`));
       }
       if (type === "zone") setZones((current) => current.filter((item) => item.id !== id));
-      else setAreas((current) => current.filter((item) => item.id !== id));
+      else if (type === "area") setAreas((current) => current.filter((item) => item.id !== id));
+      else setBlackouts((current) => current.filter((item) => item.id !== id));
       setNotice(`Delivery ${type} deleted.`);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : `Unable to delete delivery ${type}.`);
@@ -480,23 +661,26 @@ export function DashboardDeliveryCoverage() {
         <button
           className="flex h-12 items-center justify-center gap-2 rounded-xl bg-[#f10606] px-5 text-sm font-black text-white"
           type="button"
-          onClick={activeTab === "zones" ? openCreateZone : openCreateArea}
+          onClick={
+            activeTab === "zones" ? openCreateZone : activeTab === "areas" ? openCreateArea : openCreateBlackout
+          }
         >
           <Plus size={17} />
-          Add {activeTab === "zones" ? "zone" : "area"}
+          Add {activeTab === "zones" ? "zone" : activeTab === "areas" ? "area" : "blackout"}
         </button>
       </header>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-4">
         <Metric label="Delivery zones" value={zones.length} />
         <Metric label="Delivery areas" value={areas.length} />
         <Metric label="Active areas" value={areas.filter((area) => area.isActive).length} />
+        <Metric label="Upcoming blackouts" value={blackouts.length} />
       </div>
 
       <section className="rounded-xl border border-black/10 bg-white p-4 shadow-[0_14px_35px_rgba(0,0,0,0.04)]">
         <div className="flex flex-col gap-3 lg:flex-row">
-          <div className="grid grid-cols-2 rounded-xl bg-[#fafafa] p-1 lg:w-80">
-            {(["zones", "areas"] as const).map((tab) => (
+          <div className="grid grid-cols-3 rounded-xl bg-[#fafafa] p-1 lg:w-[26rem]">
+            {(["zones", "areas", "blackouts"] as const).map((tab) => (
               <button
                 className={`h-10 rounded-lg text-xs font-black ${activeTab === tab ? "bg-white text-[#f10606] shadow-sm" : "text-black/45"}`}
                 key={tab}
@@ -510,12 +694,45 @@ export function DashboardDeliveryCoverage() {
               </button>
             ))}
           </div>
-          <div className="relative flex-1">
-            <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-black/35" size={18} />
-            <input className="h-12 w-full rounded-xl border border-black/10 pl-11 pr-4 text-sm outline-none focus:border-[#f10606]/40" placeholder={`Search delivery ${activeTab}...`} value={search} onChange={(event) => setSearch(event.target.value)} />
-          </div>
-          <button className="flex h-12 items-center justify-center gap-2 rounded-xl border border-black/10 px-4 text-sm font-black text-black/65" type="button" onClick={() => void loadCoverage()}>
-            <RefreshCw className={isLoading ? "animate-spin" : ""} size={17} />
+          {activeTab === "blackouts" ? (
+            <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-3">
+              <select
+                className="h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 text-sm outline-none focus:border-[#f10606]/45"
+                value={blackoutZoneFilter}
+                onChange={(event) => setBlackoutZoneFilter(event.target.value)}
+              >
+                <option value="">All zones</option>
+                {zones.map((zone) => (
+                  <option key={zone.id} value={zone.id}>
+                    {zone.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                className="h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 text-sm outline-none focus:border-[#f10606]/45"
+                type="date"
+                value={blackoutFrom}
+                onChange={(event) => setBlackoutFrom(event.target.value)}
+              />
+              <input
+                className="h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 text-sm outline-none focus:border-[#f10606]/45"
+                type="date"
+                value={blackoutTo}
+                onChange={(event) => setBlackoutTo(event.target.value)}
+              />
+            </div>
+          ) : (
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-black/35" size={18} />
+              <input className="h-12 w-full rounded-xl border border-black/10 pl-11 pr-4 text-sm outline-none focus:border-[#f10606]/40" placeholder={`Search delivery ${activeTab}...`} value={search} onChange={(event) => setSearch(event.target.value)} />
+            </div>
+          )}
+          <button
+            className="flex h-12 items-center justify-center gap-2 rounded-xl border border-black/10 px-4 text-sm font-black text-black/65"
+            type="button"
+            onClick={() => void (activeTab === "blackouts" ? loadBlackouts() : loadCoverage())}
+          >
+            <RefreshCw className={(activeTab === "blackouts" ? isBlackoutsLoading : isLoading) ? "animate-spin" : ""} size={17} />
             Refresh
           </button>
         </div>
@@ -533,7 +750,7 @@ export function DashboardDeliveryCoverage() {
           onEdit={openEditZone}
           onDelete={(zone) => void removeItem("zone", zone.id, zone.name)}
         />
-      ) : (
+      ) : activeTab === "areas" ? (
         <AreasTable
           areas={filteredAreas}
           zones={zones}
@@ -541,6 +758,20 @@ export function DashboardDeliveryCoverage() {
           busyAction={busyAction}
           onEdit={openEditArea}
           onDelete={(area) => void removeItem("area", area.id, area.name)}
+        />
+      ) : (
+        <BlackoutsTable
+          blackouts={blackouts}
+          zones={zones}
+          loading={isBlackoutsLoading}
+          busyAction={busyAction}
+          onDelete={(blackout) =>
+            void removeItem(
+              "blackout",
+              blackout.id,
+              `${formatDate(blackout.date)} – ${blackout.deliveryZoneName || "all zones"}`,
+            )
+          }
         />
       )}
 
@@ -550,7 +781,10 @@ export function DashboardDeliveryCoverage() {
             <Input label="Zone name" value={zoneForm.name} onChange={(value) => setZoneForm((current) => ({ ...current, name: value }))} placeholder="Lagos Mainland" />
             <label className="block"><span className="text-xs font-black text-black">Description</span><textarea className="mt-2 min-h-24 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 py-3 text-sm outline-none focus:border-[#f10606]/45" value={zoneForm.description} onChange={(event) => setZoneForm((current) => ({ ...current, description: event.target.value }))} /></label>
             <Input label="Delivery cost (NGN)" value={zoneForm.deliveryCost} onChange={(value) => setZoneForm((current) => ({ ...current, deliveryCost: value }))} type="number" placeholder="3500" />
-            <StatusSelect value={zoneForm.isActive} onChange={(value) => setZoneForm((current) => ({ ...current, isActive: value }))} />
+            <Input label="Cutoff time" value={zoneForm.cutoffTime} onChange={(value) => setZoneForm((current) => ({ ...current, cutoffTime: value }))} type="time" required={false} hint="Orders placed before this time qualify for same-day delivery. Leave blank for no cutoff." />
+            <BooleanSelect label="Same-day allowed" value={zoneForm.sameDayAllowed} onChange={(value) => setZoneForm((current) => ({ ...current, sameDayAllowed: value }))} trueLabel="Allowed" falseLabel="Not allowed" />
+            <Input label="Next available offset (days)" value={zoneForm.nextAvailableOffsetDays} onChange={(value) => setZoneForm((current) => ({ ...current, nextAvailableOffsetDays: value }))} type="number" required={false} hint="Days to push the delivery date forward once the cutoff has passed or same-day is disallowed." />
+            <BooleanSelect label="Status" value={zoneForm.isActive} onChange={(value) => setZoneForm((current) => ({ ...current, isActive: value }))} />
             <SubmitButton busy={isSubmitting} label={editingId ? "Update zone" : "Create zone"} />
           </form>
         </Modal>
@@ -567,8 +801,49 @@ export function DashboardDeliveryCoverage() {
               <Input label="State" value={areaForm.state} onChange={(value) => setAreaForm((current) => ({ ...current, state: value }))} placeholder="Lagos" />
             </div>
             <Input label="Country" value={areaForm.country} onChange={(value) => setAreaForm((current) => ({ ...current, country: value }))} placeholder="Nigeria" />
-            <StatusSelect value={areaForm.isActive} onChange={(value) => setAreaForm((current) => ({ ...current, isActive: value }))} />
+            <BooleanSelect label="Status" value={areaForm.isActive} onChange={(value) => setAreaForm((current) => ({ ...current, isActive: value }))} />
             <SubmitButton busy={isSubmitting} label={editingId ? "Update area" : "Create area"} />
+          </form>
+        </Modal>
+      ) : null}
+
+      {formType === "blackout" ? (
+        <Modal title="Add delivery blackout" onClose={() => !isSubmitting && setFormType(null)}>
+          <form className="space-y-4" onSubmit={submitBlackout}>
+            <Input label="Date" value={blackoutForm.date} onChange={(value) => setBlackoutForm((current) => ({ ...current, date: value }))} type="date" />
+            <label className="block">
+              <span className="text-xs font-black text-black">Zone</span>
+              <select
+                className="mt-2 h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 text-sm outline-none focus:border-[#f10606]/45"
+                value={blackoutForm.deliveryZoneId}
+                onChange={(event) => setBlackoutForm((current) => ({ ...current, deliveryZoneId: event.target.value }))}
+              >
+                <option value="">All zones (blocks every zone this date)</option>
+                {zones.map((zone) => (
+                  <option key={zone.id} value={zone.id}>
+                    {zone.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <Input label="Start time" value={blackoutForm.startTime} onChange={(value) => setBlackoutForm((current) => ({ ...current, startTime: value }))} type="time" required={false} />
+              <Input label="End time" value={blackoutForm.endTime} onChange={(value) => setBlackoutForm((current) => ({ ...current, endTime: value }))} type="time" required={false} />
+            </div>
+            <p className="rounded-xl bg-[#fff5f5] px-4 py-3 text-[10px] font-bold text-black/50">
+              Start/end time are for reference only — any blackout on a date currently blocks the whole day for scheduling, since there is no hourly delivery-slot concept yet.
+            </p>
+            <label className="block">
+              <span className="text-xs font-black text-black">Reason</span>
+              <textarea
+                className="mt-2 min-h-24 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 py-3 text-sm outline-none focus:border-[#f10606]/45"
+                maxLength={255}
+                value={blackoutForm.reason}
+                onChange={(event) => setBlackoutForm((current) => ({ ...current, reason: event.target.value }))}
+                placeholder="Public holiday, warehouse stocktake, etc."
+              />
+            </label>
+            <SubmitButton busy={isSubmitting} label="Create blackout" />
           </form>
         </Modal>
       ) : null}
@@ -579,6 +854,9 @@ export function DashboardDeliveryCoverage() {
             <Detail label="Zone ID" value={selectedZone.id} />
             <Detail label="Delivery cost" value={formatMoney(selectedZone.deliveryCost)} />
             <Detail label="Status" value={selectedZone.isActive ? "Active" : "Inactive"} />
+            <Detail label="Cutoff time" value={selectedZone.cutoffTime || "No cutoff"} />
+            <Detail label="Same-day allowed" value={selectedZone.sameDayAllowed ? "Yes" : "No"} />
+            <Detail label="Next available offset" value={`${selectedZone.nextAvailableOffsetDays} day${selectedZone.nextAvailableOffsetDays === 1 ? "" : "s"}`} />
             <Detail label="Description" value={selectedZone.description || "No description provided."} />
             <Detail label="Covered areas" value={areas.filter((area) => area.deliveryZoneId === selectedZone.id).map((area) => area.name).join(", ") || "No areas assigned."} />
           </div>
@@ -623,6 +901,37 @@ function AreasTable({ areas, zones, loading, busyAction, onEdit, onDelete }: { a
   );
 }
 
+function BlackoutsTable({
+  blackouts,
+  zones,
+  loading,
+  busyAction,
+  onDelete,
+}: {
+  blackouts: DeliveryBlackout[];
+  zones: DeliveryZone[];
+  loading: boolean;
+  busyAction: string;
+  onDelete: (blackout: DeliveryBlackout) => void;
+}) {
+  return (
+    <TableShell columns="grid-cols-[0.8fr_1fr_0.9fr_1.3fr_0.45fr]" headers={["Date", "Zone", "Window", "Reason", "Actions"]}>
+      {loading ? <LoadingRows /> : blackouts.length ? blackouts.map((blackout) => {
+        const zone = blackout.deliveryZoneId ? zones.find((item) => item.id === blackout.deliveryZoneId) : null;
+        return (
+          <article className="grid grid-cols-[0.8fr_1fr_0.9fr_1.3fr_0.45fr] items-center gap-4 border-t border-black/10 px-5 py-4" key={blackout.id}>
+            <p className="text-sm font-black text-black">{formatDate(blackout.date)}</p>
+            <p className="text-xs font-black text-black/70">{blackout.deliveryZoneId ? blackout.deliveryZoneName || zone?.name || blackout.deliveryZoneId : "All zones"}</p>
+            <p className="text-xs font-bold text-black/55">{blackout.startTime || blackout.endTime ? `${blackout.startTime ?? "--"} – ${blackout.endTime ?? "--"}` : "Full day"}</p>
+            <p className="truncate text-xs font-medium text-black/50">{blackout.reason || "No reason provided"}</p>
+            <div className="flex justify-end gap-2"><ActionButton label={`Delete blackout on ${blackout.date}`} busy={busyAction === `delete-blackout-${blackout.id}`} onClick={() => onDelete(blackout)}><Trash2 size={15} /></ActionButton></div>
+          </article>
+        );
+      }) : <EmptyState icon={CalendarOff} label="No delivery blackouts found" />}
+    </TableShell>
+  );
+}
+
 function TableShell({ headers, columns, children }: { headers: string[]; columns: string; children: React.ReactNode }) {
   return <section className="overflow-hidden rounded-xl border border-black/10 bg-white shadow-[0_14px_35px_rgba(0,0,0,0.04)]"><div className={`grid ${columns} gap-4 bg-[#fff5f5] px-5 py-4 text-xs font-black uppercase text-black/50`}>{headers.map((header, index) => <span className={index === headers.length - 1 ? "text-right" : ""} key={header}>{header}</span>)}</div>{children}</section>;
 }
@@ -635,20 +944,20 @@ function LoadingRows() {
   return <div className="space-y-3 p-5">{[0, 1, 2].map((item) => <div className="h-14 animate-pulse rounded-lg bg-black/[0.04]" key={item} />)}</div>;
 }
 
-function EmptyState({ label }: { label: string }) {
-  return <div className="p-9 text-center"><MapPinned className="mx-auto text-[#f10606]" size={27} /><p className="mt-3 text-sm font-black text-black">{label}</p></div>;
+function EmptyState({ label, icon: Icon = MapPinned }: { label: string; icon?: typeof MapPinned }) {
+  return <div className="p-9 text-center"><Icon className="mx-auto text-[#f10606]" size={27} /><p className="mt-3 text-sm font-black text-black">{label}</p></div>;
 }
 
 function StatusBadge({ active }: { active: boolean }) {
   return <span className={`w-max rounded-full px-3 py-1 text-[10px] font-black ${active ? "bg-emerald-50 text-emerald-700" : "bg-black/[0.05] text-black/50"}`}>{active ? "Active" : "Inactive"}</span>;
 }
 
-function Input({ label, value, onChange, placeholder, type = "text", hint }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string; hint?: string }) {
-  return <label className="block"><span className="text-xs font-black text-black">{label} *</span><input className="mt-2 h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 text-sm outline-none focus:border-[#f10606]/45" min={type === "number" ? "0" : undefined} step={type === "number" ? "any" : undefined} type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />{hint ? <span className="mt-1 block text-[10px] font-bold text-black/40">{hint}</span> : null}</label>;
+function Input({ label, value, onChange, placeholder, type = "text", hint, required = true }: { label: string; value: string; onChange: (value: string) => void; placeholder?: string; type?: string; hint?: string; required?: boolean }) {
+  return <label className="block"><span className="text-xs font-black text-black">{label}{required ? " *" : ""}</span><input className="mt-2 h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 text-sm outline-none focus:border-[#f10606]/45" min={type === "number" ? "0" : undefined} step={type === "number" ? "any" : undefined} type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />{hint ? <span className="mt-1 block text-[10px] font-bold text-black/40">{hint}</span> : null}</label>;
 }
 
-function StatusSelect({ value, onChange }: { value: boolean; onChange: (value: boolean) => void }) {
-  return <label className="block"><span className="text-xs font-black text-black">Status *</span><select className="mt-2 h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 text-sm font-bold outline-none focus:border-[#f10606]/45" value={value ? "active" : "inactive"} onChange={(event) => onChange(event.target.value === "active")}><option value="active">Active</option><option value="inactive">Inactive</option></select></label>;
+function BooleanSelect({ label, value, onChange, trueLabel = "Active", falseLabel = "Inactive" }: { label: string; value: boolean; onChange: (value: boolean) => void; trueLabel?: string; falseLabel?: string }) {
+  return <label className="block"><span className="text-xs font-black text-black">{label} *</span><select className="mt-2 h-12 w-full rounded-xl border border-black/10 bg-[#fafafa] px-4 text-sm font-bold outline-none focus:border-[#f10606]/45" value={value ? "true" : "false"} onChange={(event) => onChange(event.target.value === "true")}><option value="true">{trueLabel}</option><option value="false">{falseLabel}</option></select></label>;
 }
 
 function SubmitButton({ busy, label }: { busy: boolean; label: string }) {
