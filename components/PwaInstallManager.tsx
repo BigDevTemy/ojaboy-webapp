@@ -1,7 +1,7 @@
 "use client";
 
 import { Download, Share2, X } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuthSession } from "@/lib/useAuthSession";
 
 type BeforeInstallPromptChoice = {
@@ -66,16 +66,13 @@ export function PwaInstallManager() {
   const session = useAuthSession();
   const [installEvent, setInstallEvent] =
     useState<BeforeInstallPromptEvent | null>(null);
-  const [isStandalone, setIsStandalone] = useState(false);
-  const [isDismissed, setIsDismissed] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(isStandaloneDisplay);
+  const [isDismissed, setIsDismissed] = useState(getDismissedPreference);
   const [isPrompting, setIsPrompting] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
-  const shouldUseIosInstructions = useMemo(isIosBrowser, []);
+  const [shouldUseIosInstructions] = useState(isIosBrowser);
 
   useEffect(() => {
-    setIsStandalone(isStandaloneDisplay());
-    setIsDismissed(getDismissedPreference());
-
     if ("serviceWorker" in navigator) {
       const registerServiceWorker = () => {
         navigator.serviceWorker.register("/sw.js").catch(() => {
@@ -114,7 +111,6 @@ export function PwaInstallManager() {
 
   useEffect(() => {
     if (!session || isStandalone || isDismissed) {
-      setShowPrompt(false);
       return;
     }
 

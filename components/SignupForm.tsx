@@ -18,9 +18,7 @@ type SignupVerificationResponse = {
 function isSignupVerificationResponse(
   value: unknown,
 ): value is SignupVerificationResponse {
-  console.log("Invalid verification response:", value);
   if (!value || typeof value !== "object") {
-    console.log("Invalid verification responsesss:", typeof value);
     return false;
   }
 
@@ -194,7 +192,7 @@ export function SignupForm() {
         </p>
       </div>
 
-      {error ? <p className="mt-4 text-xs font-bold text-[#f10606]">{error}</p> : null}
+      {error ? <p className="mt-4 text-sm font-bold text-[#c40000]" role="alert">{error}</p> : null}
 
       <button
         className="mt-5 h-12 w-full rounded-lg bg-[#f10606] text-sm font-black text-white shadow-[0_12px_24px_rgba(241,6,6,0.2)] transition hover:bg-[#d80505] disabled:cursor-not-allowed disabled:opacity-60"

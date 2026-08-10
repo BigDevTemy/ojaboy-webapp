@@ -25,6 +25,11 @@ a {
   text-decoration: none;
 }
 
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 3px solid #111111;
+  outline-offset: 3px;
+}
+
 button,
 input {
   font: inherit;

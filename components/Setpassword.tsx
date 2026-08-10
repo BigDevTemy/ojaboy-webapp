@@ -18,9 +18,7 @@ type SignupVerificationResponse = {
 function isSignupVerificationResponse(
   value: unknown,
 ): value is SignupVerificationResponse {
-  console.log("Invalid verification response:", value);
   if (!value || typeof value !== "object") {
-    console.log("Invalid verification responsesss:", typeof value);
     return false;
   }
 

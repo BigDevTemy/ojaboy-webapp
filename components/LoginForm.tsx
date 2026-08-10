@@ -84,29 +84,43 @@ export function LoginForm() {
     }
   }
 
+  const errorId = "login-error";
+
   return (
-    <form className="mt-4 space-y-4" onSubmit={handleSubmit}>
-      <input
-        className="h-12 w-full rounded-lg border border-black/10 px-4 text-sm outline-none"
-        placeholder="Email"
-        type="email"
-        autoComplete="email"
-        value={email}
-        onChange={(event) => setEmail(event.target.value)}
-        disabled={isLoading}
-        required
-      />
-      <input
-        className="h-12 w-full rounded-lg border border-black/10 px-4 text-sm outline-none"
-        placeholder="Password"
-        type="password"
-        autoComplete="current-password"
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
-        disabled={isLoading}
-        required
-      />
-      {error ? <p className="text-xs font-bold text-[#f10606]">{error}</p> : null}
+    <form className="mt-4 space-y-4" onSubmit={handleSubmit} aria-busy={isLoading}>
+      <label className="block" htmlFor="login-email">
+        <span className="text-sm font-bold text-black/70">Email address</span>
+        <input
+          id="login-email"
+          className="mt-2 h-12 w-full rounded-lg border border-black/15 px-4 text-sm"
+          placeholder="you@example.com"
+          type="email"
+          autoComplete="email"
+          value={email}
+          onChange={(event) => setEmail(event.target.value)}
+          disabled={isLoading}
+          aria-describedby={error ? errorId : undefined}
+          aria-invalid={error ? true : undefined}
+          required
+        />
+      </label>
+      <label className="block" htmlFor="login-password">
+        <span className="text-sm font-bold text-black/70">Password</span>
+        <input
+          id="login-password"
+          className="mt-2 h-12 w-full rounded-lg border border-black/15 px-4 text-sm"
+          placeholder="Enter your password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+          disabled={isLoading}
+          aria-describedby={error ? errorId : undefined}
+          aria-invalid={error ? true : undefined}
+          required
+        />
+      </label>
+      {error ? <p id={errorId} className="text-sm font-bold text-[#c40000]" role="alert">{error}</p> : null}
       <button
         className="h-12 w-full rounded-lg bg-[#f10606] text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-60"
         type="submit"
