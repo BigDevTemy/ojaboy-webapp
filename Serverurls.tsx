@@ -1,6 +1,8 @@
-//export const API_BASE_URL = "http://localhost:5000/";
-export const API_BASE_URL = "https://ojaboy-backend-1092974911193.us-central1.run.app/";
+// export const API_BASE_URL = "http://localhost:5000/";
 
+export const API_BASE_URL = "https://ojaboy-backend-100038939035.us-central1.run.app/";
+//export const API_BASE_URL = "https://ojaboy-backend-1092974911193.us-central1.run.app/";
+//https://ojaboy-backend-100038939035.us-central1.run.app
 export const LOGIN_URL = "auth/login";
 export const REGISTER_URL = "auth/register";
 export const FORGOT_PASSWORD_URL = "auth/forget-password";
@@ -38,7 +40,10 @@ export const MARKETS_URL = "markets";
 export const DAILY_MARKET_TRENDS = "market-analysis/latest";
 export const MARKET_PRICES_URL = "market-prices";
 export const USERS_URL = "users";
+export const STAFF_USERS_URL = "users/staff";
 export const TICKETS_URL = "tickets";
 export const COUPONS_URL = "commerce-config/coupons";
 export const PROMOTIONS_URL = "commerce-config/promotions";
 export const ANNOUNCEMENTS_URL = "announcements";
+export const ACCESS_CONTROL_ROLES_URL = "access-control/roles";
+export const ASSIGN_ROLE_URL = "access-control/assign-role";

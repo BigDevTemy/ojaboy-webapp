@@ -1,5 +1,5 @@
-import { DashboardMarketPrices } from "@/components/DashboardMarketPrices";
+import { DashboardMarketPricesByRole } from "@/components/DashboardMarketPricesByRole";
 
 export default function DashboardMarketPricesPage() {
-  return <DashboardMarketPrices />;
+  return <DashboardMarketPricesByRole />;
 }

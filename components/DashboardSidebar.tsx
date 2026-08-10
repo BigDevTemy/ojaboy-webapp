@@ -23,6 +23,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
+  ShieldCheck,
   ShoppingCart,
   Star,
   Store,
@@ -35,6 +36,8 @@ import {
 const navItems = [
   { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
   { label: "Customers", icon: Users, href: "/dashboard/customers" },
+  { label: "Staffs", icon: ShieldCheck, href: "/dashboard/staffs" },
+  { label: "Role Management", icon: ShieldCheck, href: "/dashboard/role-management" },
   { label: "Products", icon: PackageSearch, href: "/dashboard/products" },
   { label: "Product Categories", icon: Shapes, href: "/dashboard/product-categories" },
   { label: "Market Prices", icon: LineChart, href: "/dashboard/market-prices" },
@@ -53,6 +56,8 @@ const navItems = [
   { label: "Settings", icon: Settings, href: "/dashboard/settings" },
 ];
 
+const marketAgentNavItems = navItems.filter((item) => item.href === "/dashboard/market-prices");
+
 type DashboardSidebarProps = {
   isCollapsed: boolean;
   isMobileOpen: boolean;
@@ -69,6 +74,8 @@ export function DashboardSidebar({
   const pathname = usePathname();
   const router = useRouter();
   const user = useAuthSession()?.user ?? null;
+  const isMarketAgent = (user?.role || "").replace(/[\s_-]/g, "").toLowerCase() === "marketagent";
+  const visibleNavItems = isMarketAgent ? marketAgentNavItems : navItems;
 
   async function handleLogout() {
     await logout();
@@ -118,7 +125,7 @@ export function DashboardSidebar({
       </div>
 
       <nav className="mt-9 flex-1 space-y-2">
-        {navItems.map((item) => {
+        {visibleNavItems.map((item) => {
           const isActive = item.href === "/dashboard" ? pathname === item.href : pathname.startsWith(item.href);
 
           return (

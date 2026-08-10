@@ -21,6 +21,7 @@ import { useAuthSession } from "@/lib/useAuthSession";
 import {
   API_BASE_URL,
   CURRENT_ORDER_URL,
+  DAILY_MARKET_TRENDS,
   NOTIFICATIONS_URL,
   ORDER_HISTORY_URL,
 } from "@/Serverurls";
@@ -38,9 +39,19 @@ type MobileOrder = {
   items: MobileOrderItem[];
 };
 
+type MarketWatchItem = {
+  id: string;
+  name: string;
+  price: number;
+  changePercentage: number;
+  trend: string;
+  currency: string;
+};
+
 const currentOrderEndpoint = `${API_BASE_URL}${CURRENT_ORDER_URL}`;
 const orderHistoryEndpoint = `${API_BASE_URL}${ORDER_HISTORY_URL}`;
 const unreadNotificationsEndpoint = `${API_BASE_URL}${NOTIFICATIONS_URL}/unread-count`;
+const marketWatchEndpoint = `${API_BASE_URL}${DAILY_MARKET_TRENDS}`;
 
 const quickCategories = [
   { label: "Grains", image: "/products/grains.png", tone: "bg-emerald-50" },
@@ -53,29 +64,45 @@ const quickCategories = [
   { label: "Beverages", image: "/products/beverages.png", tone: "bg-yellow-50" },
 ] as const;
 
-const marketWatchData = [
-  {
-    name: "Tomatoes",
-    price: "N18,500",
-    note: "Cheaper today",
-    direction: "down",
-  },
-  {
-    name: "Rice",
-    price: "N84,500",
-    note: "Cheaper today",
-    direction: "down",
-  },
-  {
-    name: "Pepper",
-    price: "N23,000",
-    note: "Price increasing",
-    direction: "up",
-  },
-] as const;
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function parseMarketWatchItems(body: unknown): MarketWatchItem[] {
+  if (!isRecord(body) || !isRecord(body.snapshot) || !Array.isArray(body.snapshot.items)) {
+    return [];
+  }
+
+  return body.snapshot.items.flatMap((value): MarketWatchItem[] => {
+    if (!isRecord(value)) {
+      return [];
+    }
+
+    const id = readText(value, ["id"]);
+    const productName = readText(value, ["productName"]);
+    const currentPrice = Number(value.currentPrice);
+
+    if (!id || !productName || !Number.isFinite(currentPrice)) {
+      return [];
+    }
+
+    const description = [
+      productName,
+      readText(value, ["variantName"]),
+      readText(value, ["brandName"]),
+      readText(value, ["packageName"]),
+    ].filter(Boolean);
+    const changePercentage = Number(value.changePercentage);
+
+    return [{
+      id,
+      name: description.join(" · "),
+      price: currentPrice,
+      changePercentage: Number.isFinite(changePercentage) ? changePercentage : 0,
+      trend: readText(value, ["trend"]).toLowerCase(),
+      currency: readText(value, ["currency"]) || "NGN",
+    }];
+  });
 }
 
 function readText(record: Record<string, unknown>, keys: string[]) {
@@ -201,6 +228,14 @@ function formatMoney(value: number) {
   }).format(value);
 }
 
+function formatMarketPrice(value: number, currency: string) {
+  return new Intl.NumberFormat("en-NG", {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
 function formatStatus(value: string) {
   return value
     .replace(/[_-]+/g, " ")
@@ -231,7 +266,9 @@ export function CustomerMobileHome() {
   const [isOrderLoading, setIsOrderLoading] = useState(true);
   const [orderError, setOrderError] = useState("");
   const [unreadNotificationCount, setUnreadNotificationCount] = useState(0);
-  const [marketWatch, setMarketWatch] = useState(marketWatchData);
+  const [marketWatch, setMarketWatch] = useState<MarketWatchItem[]>([]);
+  const [isMarketWatchLoading, setIsMarketWatchLoading] = useState(true);
+  const [marketWatchError, setMarketWatchError] = useState("");
   const loadRecentOrder = useCallback(async () => {
     setIsOrderLoading(true);
     setOrderError("");
@@ -284,6 +321,42 @@ export function CustomerMobileHome() {
       .finally(() => {
         if (!isCancelled) {
           setIsOrderLoading(false);
+        }
+      });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    void authenticatedFetch(marketWatchEndpoint, {
+      headers: { Accept: "application/json" },
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`Unable to load market prices (${response.status}).`);
+        }
+
+        return (await response.json()) as unknown;
+      })
+      .then((body) => {
+        if (!isCancelled) {
+          setMarketWatch(parseMarketWatchItems(body));
+        }
+      })
+      .catch((error: unknown) => {
+        if (!isCancelled) {
+          setMarketWatchError(
+            error instanceof Error ? error.message : "Unable to load market prices.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!isCancelled) {
+          setIsMarketWatchLoading(false);
         }
       });
 
@@ -442,12 +515,23 @@ export function CustomerMobileHome() {
             </p>
           </div>
           <Link className="text-[11px] font-black text-[#f10606]" href="/dashboard/market-prices">
-            See all
+            View all
           </Link>
         </div>
+        {isMarketWatchLoading ? (
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+            {[0, 1, 2].map((item) => (
+              <div className="h-24 animate-pulse rounded-2xl bg-black/[0.05]" key={item} />
+            ))}
+          </div>
+        ) : marketWatchError ? (
+          <p className="rounded-2xl border border-red-100 bg-red-50 p-4 text-xs font-bold text-red-700">
+            {marketWatchError}
+          </p>
+        ) : marketWatch.length ? (
         <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
           {marketWatch.map((item) => {
-            const isUp = item.direction === "up";
+            const isUp = item.trend === "up";
             return (
               <article
                 className={`rounded-2xl border p-3 ${
@@ -455,20 +539,25 @@ export function CustomerMobileHome() {
                     ? "border-red-100 bg-red-50"
                     : "border-emerald-100 bg-emerald-50"
                 }`}
-                key={item.name}
+                key={item.id}
               >
                 <p className="text-[10px] font-black text-black/55">{item.name}</p>
                 <p className={`mt-1 text-sm font-black ${isUp ? "text-[#f10606]" : "text-emerald-700"}`}>
-                  {item.price}
+                  {formatMarketPrice(item.price, item.currency)}
                 </p>
                 <p className={`mt-2 flex items-center gap-1 text-[9px] font-bold ${isUp ? "text-[#f10606]" : "text-emerald-700"}`}>
                   {isUp ? <TrendingUp size={11} /> : <TrendingDown size={11} />}
-                  {item.note}
+                  {Math.abs(item.changePercentage).toFixed(2)}% {isUp ? "increase" : "decrease"}
                 </p>
               </article>
             );
           })}
         </div>
+        ) : (
+          <p className="rounded-2xl border border-dashed border-black/15 bg-white p-4 text-center text-xs font-bold text-black/45">
+            No market analysis is available yet.
+          </p>
+        )}
       </section>
 
       <section>

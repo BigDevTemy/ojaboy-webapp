@@ -45,11 +45,14 @@ const endpoints = [
   { name: "Create Order", method: "POST", path: "/orders", base: "Production API", auth: "Bearer", status: "Active" },
   { name: "AI Order Parser", method: "POST", path: "/ai/parse-order", base: "Staging API", auth: "Bearer", status: "Testing" },
   { name: "Notifications", method: "GET", path: "/notifications", base: "Production API", auth: "Bearer", status: "Active" },
+  { name: "List Roles", method: "GET", path: "/access-control/roles", base: "Production API", auth: "Bearer", status: "Active" },
+  { name: "Create Role", method: "POST", path: "/access-control/roles", base: "Production API", auth: "Bearer", status: "Active" },
+  { name: "Assign Role", method: "POST", path: "/access-control/assign-role", base: "Production API", auth: "Bearer", status: "Active" },
 ];
 
 const configStats = [
   { label: "Base URLs", value: "3", icon: Globe2 },
-  { label: "Endpoints", value: "18", icon: Link2 },
+  { label: "Endpoints", value: String(endpoints.length), icon: Link2 },
   { label: "Secure Routes", value: "14", icon: LockKeyhole },
   { label: "Healthy APIs", value: "2/3", icon: Activity },
 ];

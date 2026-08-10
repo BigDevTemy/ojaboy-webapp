@@ -4,6 +4,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { CustomerMobileAiAssistant } from "@/components/CustomerMobileAiAssistant";
 import { CustomerMobileHome } from "@/components/CustomerMobileHome";
+import { CustomerMobileMarketWatch } from "@/components/CustomerMobileMarketWatch";
 import { CustomerMobileOrders } from "@/components/CustomerMobileOrders";
 import { CustomerMobilePriceAlerts } from "@/components/CustomerMobilePriceAlerts";
 import { CustomerMobileShell } from "@/components/CustomerMobileShell";
@@ -28,12 +29,19 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
   const role = session?.user.role?.trim().toLowerCase() ?? "";
   const hasKnownRole = role.length > 0;
   const isCustomer = role === "user";
+  const isMarketAgent = role.replace(/[\s_-]/g, "") === "marketagent";
 
   useEffect(() => {
     if (hasMounted && !session) {
       router.replace("/login");
     }
   }, [hasMounted, router, session]);
+
+  useEffect(() => {
+    if (hasMounted && session && isMarketAgent && pathname !== "/dashboard/market-prices") {
+      router.replace("/dashboard/market-prices");
+    }
+  }, [hasMounted, isMarketAgent, pathname, router, session]);
 
   if (!hasMounted || !session || !hasKnownRole) {
     return <DashboardAccessCheck isRedirecting={hasMounted && !session} />;
@@ -67,6 +75,8 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         <CustomerMobileHome />
       ) : pathname === "/dashboard/orders" ? (
         <CustomerMobileOrders />
+      ) : pathname === "/dashboard/market-prices" ? (
+        <CustomerMobileMarketWatch />
       ) : pathname === "/dashboard/ai-assistant" ? (
         <CustomerMobileAiAssistant />
       ) : pathname === "/dashboard/watchlist" ? (
@@ -82,6 +92,10 @@ export function DashboardShell({ children }: { children: React.ReactNode }) {
         {customerContent}
       </CustomerMobileShell>
     );
+  }
+
+  if (isMarketAgent && pathname !== "/dashboard/market-prices") {
+    return <DashboardAccessCheck isRedirecting />;
   }
 
   return (
