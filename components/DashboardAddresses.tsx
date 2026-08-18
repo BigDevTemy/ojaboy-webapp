@@ -76,6 +76,7 @@ type AddressForm = {
 
 const addressesEndpoint = `${API_BASE_URL}${ADDRESSES_URL}`;
 const googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
+const GOOGLE_AUTOCOMPLETE_DEBOUNCE_MS = 350;
 const emptyAddressForm: AddressForm = {
   label: "Home",
   recipientName: "",
@@ -453,6 +454,15 @@ export function DashboardAddresses({
     null,
   );
   const googleRequestIdRef = useRef(0);
+  const googleSearchTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (googleSearchTimeoutRef.current !== null) {
+        window.clearTimeout(googleSearchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const loadAddresses = useCallback(async () => {
     setIsLoading(true);
@@ -545,45 +555,55 @@ export function DashboardAddresses({
     }
   }
 
-  async function handleGoogleSearch(value: string) {
+  function handleGoogleSearch(value: string) {
     setGoogleSearchValue(value);
     const requestId = ++googleRequestIdRef.current;
 
-    if (!googlePlacesLibrary || value.trim().length < 3) {
+    if (googleSearchTimeoutRef.current !== null) {
+      window.clearTimeout(googleSearchTimeoutRef.current);
+      googleSearchTimeoutRef.current = null;
+    }
+
+    const input = value.trim();
+    if (!googlePlacesLibrary || input.length < 3) {
       setGoogleSuggestions([]);
       return;
     }
 
-    if (!googleSessionTokenRef.current) {
-      googleSessionTokenRef.current =
-        new googlePlacesLibrary.AutocompleteSessionToken();
-    }
+    googleSearchTimeoutRef.current = window.setTimeout(async () => {
+      googleSearchTimeoutRef.current = null;
 
-    try {
-      const { suggestions } =
-        await googlePlacesLibrary.AutocompleteSuggestion.fetchAutocompleteSuggestions({
-          input: value.trim(),
-          includedRegionCodes: ["ng"],
-          language: "en",
-          region: "ng",
-          sessionToken: googleSessionTokenRef.current,
-        });
+      if (!googleSessionTokenRef.current) {
+        googleSessionTokenRef.current =
+          new googlePlacesLibrary.AutocompleteSessionToken();
+      }
 
-      if (requestId === googleRequestIdRef.current) {
-        setGoogleSuggestions(
-          suggestions.flatMap((suggestion) =>
-            suggestion.placePrediction ? [suggestion.placePrediction] : [],
-          ),
-        );
+      try {
+        const { suggestions } =
+          await googlePlacesLibrary.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+            input,
+            includedRegionCodes: ["ng"],
+            language: "en",
+            region: "ng",
+            sessionToken: googleSessionTokenRef.current,
+          });
+
+        if (requestId === googleRequestIdRef.current) {
+          setGoogleSuggestions(
+            suggestions.flatMap((suggestion) =>
+              suggestion.placePrediction ? [suggestion.placePrediction] : [],
+            ),
+          );
+        }
+      } catch {
+        if (requestId === googleRequestIdRef.current) {
+          setGoogleSuggestions([]);
+          setCreateAddressError(
+            "Google could not search for that address. You can enter it manually.",
+          );
+        }
       }
-    } catch {
-      if (requestId === googleRequestIdRef.current) {
-        setGoogleSuggestions([]);
-        setCreateAddressError(
-          "Google could not search for that address. You can enter it manually.",
-        );
-      }
-    }
+    }, GOOGLE_AUTOCOMPLETE_DEBOUNCE_MS);
   }
 
   async function selectGooglePlace(prediction: GooglePlacePrediction) {
@@ -653,8 +673,15 @@ export function DashboardAddresses({
       return;
     }
 
+    if (googleSearchTimeoutRef.current !== null) {
+      window.clearTimeout(googleSearchTimeoutRef.current);
+      googleSearchTimeoutRef.current = null;
+    }
+    googleRequestIdRef.current += 1;
     setIsAddAddressOpen(false);
     setAddressForm(emptyAddressForm);
+    setGoogleSearchValue("");
+    setGoogleSuggestions([]);
     setCreateAddressError("");
   }
 

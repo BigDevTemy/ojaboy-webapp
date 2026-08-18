@@ -193,6 +193,7 @@ const createOrderEndpoint = `${API_BASE_URL}${CREATE_ORDER_URL}`;
 const verifyPaymentEndpoint = `${API_BASE_URL}${VERIFY_PAYMENT_URL}`;
 const deliveryAvailabilityEndpoint = `${API_BASE_URL}${DELIVERY_AVAILABILITY_URL}`;
 const WEEKDAY_LABELS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
+const GOOGLE_AUTOCOMPLETE_DEBOUNCE_MS = 350;
 
 function toDateKey(year: number, month: number, day: number) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -645,6 +646,7 @@ export function DashboardCreateOrderModal({
     null,
   );
   const googleRequestIdRef = useRef(0);
+  const googleSearchTimeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
   if (isOpen) {
@@ -656,7 +658,15 @@ export function DashboardCreateOrderModal({
   return () => {
     document.body.style.overflow = "";
   };
-}, [isOpen]);
+  }, [isOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (googleSearchTimeoutRef.current !== null) {
+        window.clearTimeout(googleSearchTimeoutRef.current);
+      }
+    };
+  }, []);
 
   function isItemResolved(item: QuoteResponseItem) {
     return isMatchedStatus(item.status);
@@ -791,6 +801,11 @@ export function DashboardCreateOrderModal({
   }
 
   function closeModal() {
+    if (googleSearchTimeoutRef.current !== null) {
+      window.clearTimeout(googleSearchTimeoutRef.current);
+      googleSearchTimeoutRef.current = null;
+    }
+    googleRequestIdRef.current += 1;
     setIsOpen(false);
     setStep("write");
     setQuote(null);
@@ -840,50 +855,55 @@ export function DashboardCreateOrderModal({
     }
   }
 
-  async function handleAddressSearch(value: string) {
+  function handleAddressSearch(value: string) {
     setAddressSearchValue(value);
     setAlternateDeliveryAddress(null);
     setAddressSearchError("");
     const requestId = ++googleRequestIdRef.current;
 
-    if (!value.trim()) {
+    if (googleSearchTimeoutRef.current !== null) {
+      window.clearTimeout(googleSearchTimeoutRef.current);
+      googleSearchTimeoutRef.current = null;
+    }
+
+    const input = value.trim();
+    if (!googlePlacesLibrary || input.length < 3) {
       setAddressSuggestions([]);
       return;
     }
 
-    if (!googlePlacesLibrary || value.trim().length < 3) {
-      setAddressSuggestions([]);
-      return;
-    }
+    googleSearchTimeoutRef.current = window.setTimeout(async () => {
+      googleSearchTimeoutRef.current = null;
 
-    if (!googleSessionTokenRef.current) {
-      googleSessionTokenRef.current =
-        new googlePlacesLibrary.AutocompleteSessionToken();
-    }
-
-    try {
-      const { suggestions } =
-        await googlePlacesLibrary.AutocompleteSuggestion.fetchAutocompleteSuggestions({
-          input: value.trim(),
-          includedRegionCodes: ["ng"],
-          language: "en",
-          region: "ng",
-          sessionToken: googleSessionTokenRef.current,
-        });
-
-      if (requestId === googleRequestIdRef.current) {
-        setAddressSuggestions(
-          suggestions.flatMap((suggestion) =>
-            suggestion.placePrediction ? [suggestion.placePrediction] : [],
-          ),
-        );
+      if (!googleSessionTokenRef.current) {
+        googleSessionTokenRef.current =
+          new googlePlacesLibrary.AutocompleteSessionToken();
       }
-    } catch {
-      if (requestId === googleRequestIdRef.current) {
-        setAddressSuggestions([]);
-        setAddressSearchError("Google could not search for that address.");
+
+      try {
+        const { suggestions } =
+          await googlePlacesLibrary.AutocompleteSuggestion.fetchAutocompleteSuggestions({
+            input,
+            includedRegionCodes: ["ng"],
+            language: "en",
+            region: "ng",
+            sessionToken: googleSessionTokenRef.current,
+          });
+
+        if (requestId === googleRequestIdRef.current) {
+          setAddressSuggestions(
+            suggestions.flatMap((suggestion) =>
+              suggestion.placePrediction ? [suggestion.placePrediction] : [],
+            ),
+          );
+        }
+      } catch {
+        if (requestId === googleRequestIdRef.current) {
+          setAddressSuggestions([]);
+          setAddressSearchError("Google could not search for that address.");
+        }
       }
-    }
+    }, GOOGLE_AUTOCOMPLETE_DEBOUNCE_MS);
   }
 
   async function selectAlternateAddress(prediction: GooglePlacePrediction) {
